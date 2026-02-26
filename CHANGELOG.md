@@ -48,7 +48,7 @@ Named data references users can pull into AI context with `@`:
 #### HTTP API Server (`nowaikit serve`)
 - `node dist/http-server.js` / `npm run serve` — REST wrapper around all MCP tools
 - `POST /api/tool` — call any tool by name with params
-- `GET /api/tools` — list all 284+ tools
+- `GET /api/tools` — list all 400+ tools
 - `GET /api/health` — health check + instance info
 - `GET /api/resources` — list @ resources
 - `GET /api/resource?uri=...` — read a resource
@@ -104,7 +104,7 @@ Named data references users can pull into AI context with `@`:
 - `src/servicenow/types.ts` — added `AuthMode` type and new `ServiceNowConfig` fields
 - `src/servicenow/client.ts` — added `withUser()`, `getImpersonateHeader()`, `X-Sn-Impersonate` support
 - `package.json` — added `bin: { nowaikit }`, `serve` and `setup` scripts; new deps: `@inquirer/prompts`, `chalk`, `commander`, `ora`
-- Total tools: 284+ (unchanged from v2.3); all tools now fully audit-logged
+- Total tools: 400+; all tools now fully audit-logged
 
 ---
 
@@ -128,7 +128,7 @@ Named data references users can pull into AI context with `@`:
 
 ### Changed
 - MCP server version bumped to 2.3.0
-- Total tools: 270+ → 284+
+- Total tools: 270+ → 400+
 
 ---
 

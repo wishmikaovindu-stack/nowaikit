@@ -1,6 +1,6 @@
 # NowAIKit — Usage Examples
 
-This document provides real-world examples of using the NowAIKit ServiceNow MCP server (284+ tools across all ServiceNow modules).
+This document provides real-world examples of using the NowAIKit ServiceNow MCP server (400+ tools across all ServiceNow modules).
 
 ## Table of Contents
 
@@ -239,7 +239,7 @@ curl -X POST http://localhost:3100/api/tool \
 ### Health check (no auth required)
 ```bash
 curl http://localhost:3100/api/health
-# → { "status": "ok", "instance": "prod", "toolCount": 284, "ssoEnabled": false, ... }
+# → { "status": "ok", "instance": "prod", "toolCount": 400, "ssoEnabled": false, ... }
 ```
 
 ---

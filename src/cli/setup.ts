@@ -21,7 +21,7 @@ import { writeClientConfig } from './writers/index.js';
 import type { InstanceConfig } from './config-store.js';
 
 const TOOL_PACKAGES = [
-  { value: 'full', name: 'full — all 284+ tools' },
+  { value: 'full', name: 'full — all 400+ tools' },
   { value: 'service_desk', name: 'service_desk — help desk agents' },
   { value: 'change_coordinator', name: 'change_coordinator — change managers' },
   { value: 'knowledge_author', name: 'knowledge_author — KB writers' },

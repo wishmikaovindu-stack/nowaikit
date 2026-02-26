@@ -5,7 +5,7 @@
 name: nowaikit
 displayName: nowaikit — ServiceNow MCP
 description: >
-  284+ tools across all ServiceNow modules — ITSM, ITOM, CMDB, HRSD, CSM,
+  400+ tools across all ServiceNow modules — ITSM, ITOM, CMDB, HRSD, CSM,
   Flow Designer, App Studio, ATF, Performance Analytics, Now Assist and more.
   Multi-instance support, 14 role-based tool packages, 5-tier permissions,
   slash commands and @ mention resources built in.
@@ -104,7 +104,7 @@ config:
 
   - id: toolPackage
     name: Tool Package
-    description: Load a role-specific subset of tools instead of all 284+
+    description: Load a role-specific subset of tools instead of all 400+
     type: select
     options:
       - value: full
