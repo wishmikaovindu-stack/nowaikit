@@ -15,6 +15,11 @@
       <stop offset="60%" style="stop-color:#818cf8;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#a78bfa;stop-opacity:1" />
     </linearGradient>
+    <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0ea5e9;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
     <filter id="glow">
       <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
       <feMerge>
@@ -57,9 +62,20 @@
   <text x="52" y="210" font-family="'Courier New', monospace" font-size="140" fill="#0ea5e9" opacity="0.08" font-weight="bold">{</text>
   <text x="1095" y="210" font-family="'Courier New', monospace" font-size="140" fill="#8b5cf6" opacity="0.08" font-weight="bold">}</text>
 
-  <!-- Main logo text: NowAIKit -->
+  <!-- Logo icon -->
+  <g transform="translate(378, 94)">
+    <rect width="54" height="54" rx="12" fill="url(#iconGrad)"/>
+    <g transform="scale(1.6875)">
+      <path d="M9 23V9l7 10V9" stroke="#fff" stroke-width="1.48" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <circle cx="23" cy="12" r="1.48" fill="#fff" opacity="0.9"/>
+      <circle cx="23" cy="20" r="1.48" fill="#fff" opacity="0.9"/>
+      <line x1="23" y1="14.5" x2="23" y2="17.5" stroke="#fff" stroke-width="0.89" opacity="0.6"/>
+    </g>
+  </g>
+
+  <!-- Logo text: NowAIKit -->
   <text
-    x="600" y="148"
+    x="648" y="148"
     font-family="'SF Pro Display', 'Segoe UI', system-ui, -apple-system, sans-serif"
     font-size="82"
     font-weight="700"
@@ -71,7 +87,7 @@
   </text>
 
   <!-- Accent underline -->
-  <rect x="340" y="163" width="520" height="2.5" fill="url(#accentGrad)" rx="2" opacity="0.7"/>
+  <rect x="378" y="163" width="480" height="2.5" fill="url(#accentGrad)" rx="2" opacity="0.7"/>
 
   <!-- Tagline -->
   <text

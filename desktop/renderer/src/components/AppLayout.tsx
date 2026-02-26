@@ -18,7 +18,16 @@ export function AppLayout() {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-logo">
-          NowAIKit<span>v{version}</span>
+          <div className="logo-icon">
+            <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+              <path d="M9 23V9l7 10V9" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="23" cy="12" r="2.5" fill="#fff" opacity="0.9"/>
+              <circle cx="23" cy="20" r="2.5" fill="#fff" opacity="0.9"/>
+              <line x1="23" y1="14.5" x2="23" y2="17.5" stroke="#fff" strokeWidth="1.5" opacity="0.6"/>
+            </svg>
+          </div>
+          <span className="logo-text">Now<span className="logo-accent">AI</span>Kit</span>
+          <span className="logo-version">v{version}</span>
         </div>
 
         <nav className="sidebar-nav">
