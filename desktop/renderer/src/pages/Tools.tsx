@@ -31,6 +31,30 @@ const MODULES = [
   { id: 'event',     label: 'Events' },
 ];
 
+// Permission tiers derived from tool descriptions
+type Tier = 'read' | 'write' | 'scripting' | 'agentic';
+
+const TIERS: { id: Tier | 'all'; label: string; color: string }[] = [
+  { id: 'all',       label: 'All Tiers',  color: 'var(--dim)' },
+  { id: 'read',      label: 'Read',       color: 'var(--green)' },
+  { id: 'write',     label: 'Write',      color: 'var(--yellow)' },
+  { id: 'scripting', label: 'Scripting',  color: '#c084fc' },
+  { id: 'agentic',   label: 'Agentic',    color: 'var(--red)' },
+];
+
+function toolTier(desc: string): Tier {
+  const d = (desc || '').toLowerCase();
+  if (d.includes('[scripting]') || d.includes('scripting')) return 'scripting';
+  if (d.includes('[agentic]') || d.includes('agentic playbook')) return 'agentic';
+  if (d.includes('[write]') || d.includes('write_enabled') || d.includes('requires write')) return 'write';
+  return 'read';
+}
+
+function tierBadge(tier: Tier): React.ReactElement {
+  const meta = TIERS.find(t => t.id === tier)!;
+  return <span style={{ fontSize:'0.65rem', padding:'2px 6px', borderRadius:10, border:`1px solid ${meta.color}`, color: meta.color, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em' }}>{meta.label}</span>;
+}
+
 function toolModule(name: string): string {
   const n = name.toLowerCase();
   for (const m of MODULES.slice(1)) { if (n.includes(m.id)) return m.id; }
@@ -109,6 +133,7 @@ export default function Tools({ activeToolPackage, serverOnline, serverUrl, onRe
   const [tools,      setTools]      = useState<ToolDef[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [module,     setModule]     = useState('all');
+  const [tier,       setTier]       = useState<Tier | 'all'>('all');
   const [search,     setSearch]     = useState('');
   const [selected,   setSelected]   = useState<ToolDef | null>(null);
   const [restarting, setRestarting] = useState(false);
@@ -121,6 +146,7 @@ export default function Tools({ activeToolPackage, serverOnline, serverUrl, onRe
 
   const filtered = tools.filter(t => {
     if (module !== 'all' && toolModule(t.name) !== module) return false;
+    if (tier !== 'all' && toolTier(t.description) !== tier) return false;
     if (search && !t.name.toLowerCase().includes(search.toLowerCase()) && !(t.description ?? '').toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
@@ -138,7 +164,7 @@ export default function Tools({ activeToolPackage, serverOnline, serverUrl, onRe
         <input className="input" placeholder="Search tools…" value={search} onChange={e => setSearch(e.target.value)} style={{ width:220 }} />
       </div>
 
-      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:20 }}>
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
         {MODULES.map(m => {
           const cnt = m.id === 'all' ? tools.length : tools.filter(t => toolModule(t.name) === m.id).length;
           if (cnt === 0 && m.id !== 'all') return null;
@@ -151,6 +177,25 @@ export default function Tools({ activeToolPackage, serverOnline, serverUrl, onRe
               fontWeight:  module === m.id ? 600 : 400, transition:'all .15s',
             }}>
               {m.label} <span style={{ opacity:.7, marginLeft:2 }}>{cnt}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Permission tier filter */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:20, alignItems:'center' }}>
+        <span style={{ fontSize:'0.75rem', color:'var(--dim)', marginRight:4 }}>Tier:</span>
+        {TIERS.map(t => {
+          const cnt = t.id === 'all' ? tools.length : tools.filter(tl => toolTier(tl.description) === t.id).length;
+          return (
+            <button key={t.id} onClick={() => setTier(t.id)} style={{
+              padding:'4px 10px', borderRadius:16, fontSize:'0.75rem', border:'1px solid',
+              borderColor: tier === t.id ? t.color : 'var(--border2)',
+              background: tier === t.id ? `${t.color}15` : 'transparent',
+              color: tier === t.id ? t.color : 'var(--text2)',
+              fontWeight: tier === t.id ? 600 : 400, transition:'all .15s',
+            }}>
+              {t.label} <span style={{ opacity:.7, marginLeft:2 }}>{cnt}</span>
             </button>
           );
         })}
@@ -201,7 +246,10 @@ export default function Tools({ activeToolPackage, serverOnline, serverUrl, onRe
               <div style={{ fontSize:'0.78rem', color:'var(--text2)', lineHeight:1.4, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>
                 {t.description || 'No description'}
               </div>
-              <div style={{ marginTop:8 }}><span className="badge-dim">{toolModule(t.name)}</span></div>
+              <div style={{ marginTop:8, display:'flex', gap:6, alignItems:'center' }}>
+                <span className="badge-dim">{toolModule(t.name)}</span>
+                {tierBadge(toolTier(t.description))}
+              </div>
             </button>
           ))}
         </div>

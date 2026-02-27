@@ -94,7 +94,17 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('instances:test', async (_event, instance: InstanceConfig) => {
-    return serverManager.testConnection(instance);
+    const start = Date.now();
+    const result = await serverManager.testConnection(instance);
+    configStore.appendAuditLog({
+      ts: new Date().toISOString(),
+      event: 'instance:test',
+      instance: instance.name || instance.instanceUrl,
+      success: result.success,
+      durationMs: Date.now() - start,
+      error: result.error,
+    });
+    return result;
   });
 
   // ── Server ──
@@ -143,7 +153,18 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('tools:execute', async (_event, toolName: string, args: Record<string, unknown>) => {
-    return serverManager.executeTool(toolName, args);
+    const start = Date.now();
+    const result = await serverManager.executeTool(toolName, args);
+    configStore.appendAuditLog({
+      ts: new Date().toISOString(),
+      event: 'tool:execute',
+      tool: toolName,
+      instance: serverManager.getStatus().instance,
+      success: result.success,
+      durationMs: Date.now() - start,
+      error: result.error,
+    });
+    return result;
   });
 
   // ── Audit Log ──
@@ -185,6 +206,9 @@ function registerIpcHandlers() {
   }) => {
     const { provider, apiKey, model, messages, tools: toolDefs } = params;
     if (!apiKey) return { error: 'No API key configured' };
+
+    const chatStart = Date.now();
+    const toolCount = toolDefs?.length || 0;
 
     // System prompt that instructs the AI to use ServiceNow tools
     const systemPrompt = toolDefs && toolDefs.length > 0
@@ -256,9 +280,13 @@ Set the limit parameter to match what user asks for (e.g. "5 most recent" → li
           },
           body: JSON.stringify(body),
         });
-        if (!res.ok) return { error: `API error ${res.status}: ${await res.text()}` };
+        if (!res.ok) {
+          const errText = `API error ${res.status}: ${await res.text()}`;
+          configStore.appendAuditLog({ ts: new Date().toISOString(), event: 'chat:send', provider, model, toolCount, success: false, durationMs: Date.now() - chatStart, error: errText });
+          return { error: errText };
+        }
         const data = await res.json() as Record<string, unknown>;
-        // Return full content array (may include tool_use blocks)
+        configStore.appendAuditLog({ ts: new Date().toISOString(), event: 'chat:send', provider, model, toolCount, success: true, durationMs: Date.now() - chatStart });
         return { content: data.content, stop_reason: data.stop_reason };
 
       } else if (provider === 'google') {
@@ -292,7 +320,11 @@ Set the limit parameter to match what user asks for (e.g. "5 most recent" → li
         }
 
         const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        if (!res.ok) return { error: `Google AI error ${res.status}: ${await res.text()}` };
+        if (!res.ok) {
+          const errText = `Google AI error ${res.status}: ${await res.text()}`;
+          configStore.appendAuditLog({ ts: new Date().toISOString(), event: 'chat:send', provider, model, toolCount, success: false, durationMs: Date.now() - chatStart, error: errText });
+          return { error: errText };
+        }
         const data = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string; functionCall?: { name: string; args: Record<string, unknown> } }> } }> };
         const parts = data.candidates?.[0]?.content?.parts ?? [];
 
@@ -303,6 +335,7 @@ Set the limit parameter to match what user asks for (e.g. "5 most recent" → li
           if (p.functionCall) content.push({ type: 'tool_use', id: `toolu_${Date.now()}`, name: p.functionCall.name, input: p.functionCall.args });
         }
         const hasToolUse = content.some(c => c.type === 'tool_use');
+        configStore.appendAuditLog({ ts: new Date().toISOString(), event: 'chat:send', provider, model, toolCount, success: true, durationMs: Date.now() - chatStart });
         return { content, stop_reason: hasToolUse ? 'tool_use' : 'end_turn' };
 
       } else {
@@ -357,7 +390,11 @@ Set the limit parameter to match what user asks for (e.g. "5 most recent" → li
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
           body: JSON.stringify(body),
         });
-        if (!res.ok) return { error: `API error ${res.status}: ${await res.text()}` };
+        if (!res.ok) {
+          const errText = `API error ${res.status}: ${await res.text()}`;
+          configStore.appendAuditLog({ ts: new Date().toISOString(), event: 'chat:send', provider, model, toolCount, success: false, durationMs: Date.now() - chatStart, error: errText });
+          return { error: errText };
+        }
         const data = await res.json() as { choices?: Array<{ message?: { content?: string; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }; finish_reason?: string }> };
         const choice = data.choices?.[0];
         const msg = choice?.message;
@@ -373,10 +410,20 @@ Set the limit parameter to match what user asks for (e.g. "5 most recent" → li
           }
         }
         const hasToolUse = content.some(c => c.type === 'tool_use');
+        configStore.appendAuditLog({ ts: new Date().toISOString(), event: 'chat:send', provider, model, toolCount, success: true, durationMs: Date.now() - chatStart });
         return { content, stop_reason: hasToolUse ? 'tool_use' : 'end_turn' };
       }
     } catch (err) {
-      return { error: err instanceof Error ? err.message : 'Request failed' };
+      const errMsg = err instanceof Error ? err.message : 'Request failed';
+      configStore.appendAuditLog({
+        ts: new Date().toISOString(),
+        event: 'chat:send',
+        provider, model, toolCount,
+        success: false,
+        durationMs: Date.now() - chatStart,
+        error: errMsg,
+      });
+      return { error: errMsg };
     }
   });
 }

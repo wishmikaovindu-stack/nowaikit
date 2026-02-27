@@ -19,7 +19,7 @@ interface LogEntry {
   [key: string]: unknown;
 }
 
-const PAGE_SIZE = 15;
+const PAGE_SIZES = [15, 25, 50, 100];
 
 function api(): ElectronAPI { return getApi; }
 
@@ -29,6 +29,7 @@ export default function Logs(): React.ReactElement {
   const [filter,     setFilter]     = useState('');
   const [selected,   setSelected]   = useState<LogEntry | null>(null);
   const [page,       setPage]       = useState(0);
+  const [pageSize,   setPageSize]   = useState(25);
 
   function loadFresh() {
     setLoading(true);
@@ -36,7 +37,7 @@ export default function Logs(): React.ReactElement {
     setPage(0);
     const a = api();
     if (!a) { setLoading(false); return; }
-    a.getAuditLogs(500)
+    a.getAuditLogs(2000)
       .then(r => { setAllEntries((r ?? []) as unknown as LogEntry[]); })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -56,8 +57,8 @@ export default function Logs(): React.ReactElement {
       || (e.user ?? '').toLowerCase().includes(q);
   });
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const pageEntries = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const pageEntries = filtered.slice(page * pageSize, (page + 1) * pageSize);
 
   function fmtTime(ts?: string) {
     if (!ts) return '—';
@@ -171,23 +172,62 @@ export default function Logs(): React.ReactElement {
           </table>
 
           {/* Pagination */}
-          {totalPages > 1 && (
-            <div style={{ padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'center', gap:8, borderTop:'1px solid var(--border)' }}>
-              <button className="btn-ghost" onClick={() => setPage(0)} disabled={page === 0} style={{ padding:'5px 10px', fontSize:'0.78rem' }}>
-                First
-              </button>
-              <button className="btn-ghost" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ padding:'5px 10px', fontSize:'0.78rem' }}>
-                ← Prev
-              </button>
-              <span style={{ fontSize:'0.8rem', color:'var(--text2)', padding:'0 8px' }}>
-                Page {page + 1} of {totalPages}
+          {(filtered.length > 0) && (
+            <div style={{ padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', borderTop:'1px solid var(--border)', flexWrap:'wrap', gap:8 }}>
+              {/* Page size selector */}
+              <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:'0.78rem', color:'var(--text2)' }}>
+                <span>Rows:</span>
+                <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(0); }} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:4, color:'var(--text)', padding:'3px 6px', fontSize:'0.78rem' }}>
+                  {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              {/* Page navigation */}
+              <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                <button className="btn-ghost" onClick={() => setPage(0)} disabled={page === 0} style={{ padding:'4px 8px', fontSize:'0.75rem' }}>
+                  « First
+                </button>
+                <button className="btn-ghost" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ padding:'4px 8px', fontSize:'0.75rem' }}>
+                  ‹ Prev
+                </button>
+
+                {/* Page number buttons */}
+                {(() => {
+                  const pages: number[] = [];
+                  const start = Math.max(0, page - 2);
+                  const end = Math.min(totalPages - 1, page + 2);
+                  if (start > 0) pages.push(0);
+                  if (start > 1) pages.push(-1); // ellipsis
+                  for (let i = start; i <= end; i++) pages.push(i);
+                  if (end < totalPages - 2) pages.push(-2); // ellipsis
+                  if (end < totalPages - 1) pages.push(totalPages - 1);
+                  return pages.map((p, idx) => {
+                    if (p < 0) return <span key={`e${idx}`} style={{ padding:'0 4px', color:'var(--dim)', fontSize:'0.75rem' }}>…</span>;
+                    return (
+                      <button key={p} className="btn-ghost" onClick={() => setPage(p)} style={{
+                        padding:'4px 8px', fontSize:'0.75rem', minWidth:28,
+                        background: p === page ? 'var(--accent)' : 'transparent',
+                        color: p === page ? '#fff' : 'var(--text2)',
+                        borderRadius: 4, fontWeight: p === page ? 600 : 400,
+                      }}>
+                        {p + 1}
+                      </button>
+                    );
+                  });
+                })()}
+
+                <button className="btn-ghost" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} style={{ padding:'4px 8px', fontSize:'0.75rem' }}>
+                  Next ›
+                </button>
+                <button className="btn-ghost" onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1} style={{ padding:'4px 8px', fontSize:'0.75rem' }}>
+                  Last »
+                </button>
+              </div>
+
+              {/* Summary */}
+              <span style={{ fontSize:'0.75rem', color:'var(--dim)' }}>
+                {page * pageSize + 1}–{Math.min((page + 1) * pageSize, filtered.length)} of {filtered.length}
               </span>
-              <button className="btn-ghost" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} style={{ padding:'5px 10px', fontSize:'0.78rem' }}>
-                Next →
-              </button>
-              <button className="btn-ghost" onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1} style={{ padding:'5px 10px', fontSize:'0.78rem' }}>
-                Last
-              </button>
             </div>
           )}
 
