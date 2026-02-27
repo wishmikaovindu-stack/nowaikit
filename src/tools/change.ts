@@ -93,6 +93,20 @@ export function getChangeToolDefinitions() {
         required: ['sys_id', 'close_code', 'close_notes'],
       },
     },
+    {
+      name: 'schedule_cab_meeting',
+      description: '[Write] Schedule a Change Advisory Board (CAB) meeting',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          change_id: { type: 'string', description: 'Change request number (CHG...) or sys_id' },
+          date: { type: 'string', description: 'ISO date for the CAB meeting' },
+          duration_minutes: { type: 'number', description: 'Meeting duration in minutes' },
+          attendees: { type: 'string', description: 'Comma-separated group names' },
+        },
+        required: ['change_id', 'date'],
+      },
+    },
   ];
 }
 
@@ -163,6 +177,26 @@ export async function executeChangeToolCall(
         close_notes: args.close_notes,
       });
       return { ...result, summary: `Closed change request ${args.sys_id}` };
+    }
+    case 'schedule_cab_meeting': {
+      requireWrite();
+      if (!args.change_id || !args.date)
+        throw new ServiceNowError('change_id and date are required', 'INVALID_REQUEST');
+      let sysId = args.change_id;
+      if (!/^[0-9a-f]{32}$/i.test(args.change_id)) {
+        const resp = await client.queryRecords({ table: 'change_request', query: `number=${args.change_id}^ORsys_id=${args.change_id}`, limit: 1 });
+        if (resp.count === 0) throw new ServiceNowError(`Change request not found: ${args.change_id}`, 'NOT_FOUND');
+        sysId = resp.records[0].sys_id;
+      }
+      const workNote = 'CAB meeting scheduled for ' + args.date
+        + (args.duration_minutes ? ', duration: ' + args.duration_minutes + ' minutes' : '')
+        + (args.attendees ? ', attendees: ' + args.attendees : '');
+      const result = await client.updateRecord('change_request', sysId, {
+        cab_date: args.date,
+        cab_required: 'true',
+        work_notes: workNote,
+      });
+      return { ...result, summary: `Scheduled CAB meeting for change ${args.change_id} on ${args.date}` };
     }
     default:
       return null;

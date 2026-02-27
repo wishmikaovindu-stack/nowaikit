@@ -196,6 +196,36 @@ export function getCatalogToolDefinitions() {
         required: [],
       },
     },
+    {
+      name: 'create_catalog_variable',
+      description: '[Write] Add a form variable to a service catalog item',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          cat_item_id: { type: 'string', description: 'Catalog item sys_id' },
+          name: { type: 'string', description: 'Variable name' },
+          question_text: { type: 'string', description: 'Label shown to user' },
+          type: { type: 'string', description: 'Variable type: string/reference/select_box/checkbox/date/date_time/integer/multi_line_text/email' },
+          order: { type: 'number', description: 'Display order (default: 100)' },
+          mandatory: { type: 'boolean', description: 'Required field' },
+        },
+        required: ['cat_item_id', 'name', 'question_text', 'type'],
+      },
+    },
+    {
+      name: 'create_catalog_ui_policy',
+      description: '[Write] Create a UI policy for a catalog item form',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          cat_item_id: { type: 'string', description: 'Catalog item sys_id' },
+          short_description: { type: 'string', description: 'UI policy description' },
+          conditions: { type: 'string', description: 'Encoded condition query' },
+          reverse_if_false: { type: 'boolean', description: 'Reverse actions when condition is false' },
+        },
+        required: ['cat_item_id', 'short_description'],
+      },
+    },
   ];
 }
 
@@ -320,6 +350,38 @@ export async function executeCatalogToolCall(
       if (args.query) query = `${args.query}^${query}`;
       const resp = await client.queryRecords({ table: 'task_sla', query, limit: args.limit || 10 });
       return { count: resp.count, slas: resp.records };
+    }
+    case 'create_catalog_variable': {
+      requireWrite();
+      if (!args.cat_item_id || !args.name || !args.question_text || !args.type)
+        throw new ServiceNowError('cat_item_id, name, question_text, and type are required', 'INVALID_REQUEST');
+      const typeMap: Record<string, string> = {
+        string: '6', reference: '8', select_box: '1', checkbox: '7', date: '10',
+        date_time: '15', integer: '2', multi_line_text: '2', email: '32',
+      };
+      const result = await client.createRecord('item_option_new', {
+        cat_item: args.cat_item_id,
+        name: args.name,
+        question_text: args.question_text,
+        type: typeMap[args.type] || args.type,
+        order: args.order || 100,
+        mandatory: args.mandatory ? 'true' : 'false',
+      });
+      return { ...result, summary: `Created catalog variable "${args.name}" on item ${args.cat_item_id}` };
+    }
+    case 'create_catalog_ui_policy': {
+      requireWrite();
+      if (!args.cat_item_id || !args.short_description)
+        throw new ServiceNowError('cat_item_id and short_description are required', 'INVALID_REQUEST');
+      const result = await client.createRecord('catalog_ui_policy', {
+        catalog_item: args.cat_item_id,
+        short_description: args.short_description,
+        applies_to: 'catalog_item',
+        catalog_conditions: args.conditions || '',
+        reverse_if_false: args.reverse_if_false ? 'true' : 'false',
+        active: 'true',
+      });
+      return { ...result, summary: `Created catalog UI policy "${args.short_description}" on item ${args.cat_item_id}` };
     }
     default:
       return null;

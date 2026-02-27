@@ -84,6 +84,7 @@ const PACKAGE_TOOL_NAMES: Record<string, string[]> = {
     'query_records', 'get_record',
     'list_assets', 'get_asset', 'create_asset', 'update_asset', 'retire_asset',
     'list_software_licenses', 'get_license_compliance', 'list_asset_contracts',
+    'track_asset_lifecycle', 'get_license_optimization',
   ],
   portal_developer: [
     'query_records', 'get_record', 'get_table_schema',
@@ -128,17 +129,20 @@ const PACKAGE_TOOL_NAMES: Record<string, string[]> = {
     'get_my_approvals', 'approve_request', 'reject_request',
     'get_problem', 'list_change_requests',
     'search_cmdb_ci', 'get_cmdb_ci', 'list_relationships',
+    'schedule_cab_meeting',
   ],
   knowledge_author: [
     'query_records', 'get_record', 'get_user',
     'list_knowledge_bases', 'search_knowledge', 'get_knowledge_article', 'create_knowledge_article', 'update_knowledge_article', 'publish_knowledge_article',
     'list_catalog_items', 'search_catalog', 'get_catalog_item',
+    'retire_knowledge_article',
   ],
   catalog_builder: [
     'query_records', 'get_record', 'get_user',
     'list_catalog_items', 'search_catalog', 'get_catalog_item', 'create_catalog_item', 'update_catalog_item', 'order_catalog_item',
     'create_approval_rule',
     'list_users', 'list_groups',
+    'create_catalog_variable', 'create_catalog_ui_policy',
   ],
   system_administrator: [
     'query_records', 'get_record', 'get_user', 'get_group', 'get_table_schema',
@@ -157,6 +161,7 @@ const PACKAGE_TOOL_NAMES: Record<string, string[]> = {
     'bulk_get_properties', 'bulk_set_properties', 'list_property_categories',
     'get_current_update_set', 'list_update_sets',
     'create_update_set', 'switch_update_set', 'complete_update_set', 'preview_update_set', 'ensure_active_update_set',
+    'create_scheduled_report', 'create_kpi',
   ],
   platform_developer: [
     'query_records', 'get_record', 'get_table_schema',
@@ -175,6 +180,7 @@ const PACKAGE_TOOL_NAMES: Record<string, string[]> = {
     'search_cmdb_ci', 'get_cmdb_ci', 'list_relationships', 'cmdb_health_dashboard', 'service_mapping_summary',
     'list_discovery_schedules', 'list_mid_servers', 'list_active_events',
     'run_aggregate_query', 'trend_query',
+    'create_ci_relationship', 'cmdb_impact_analysis', 'run_discovery_scan',
   ],
   agile_manager: [
     'query_records', 'get_record', 'get_user',

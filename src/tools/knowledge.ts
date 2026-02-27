@@ -80,6 +80,17 @@ export function getKnowledgeToolDefinitions() {
         required: ['sys_id'],
       },
     },
+    {
+      name: 'retire_knowledge_article',
+      description: '[Write] Retire a knowledge article (mark as outdated)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          article_id: { type: 'string', description: 'Article number (KB...) or sys_id' },
+        },
+        required: ['article_id'],
+      },
+    },
   ];
 }
 
@@ -133,6 +144,18 @@ export async function executeKnowledgeToolCall(
       if (!args.sys_id) throw new ServiceNowError('sys_id is required', 'INVALID_REQUEST');
       const result = await client.updateRecord('kb_knowledge', args.sys_id, { workflow_state: 'published' });
       return { ...result, summary: `Published knowledge article ${args.sys_id}` };
+    }
+    case 'retire_knowledge_article': {
+      requireWrite();
+      if (!args.article_id) throw new ServiceNowError('article_id is required', 'INVALID_REQUEST');
+      let sysId = args.article_id;
+      if (!/^[0-9a-f]{32}$/i.test(args.article_id)) {
+        const resp = await client.queryRecords({ table: 'kb_knowledge', query: `number=${args.article_id}^ORsys_id=${args.article_id}`, limit: 1 });
+        if (resp.count === 0) throw new ServiceNowError(`Article not found: ${args.article_id}`, 'NOT_FOUND');
+        sysId = resp.records[0].sys_id;
+      }
+      const result = await client.updateRecord('kb_knowledge', sysId, { workflow_state: 'retired' });
+      return { ...result, summary: `Retired knowledge article ${args.article_id}` };
     }
     default:
       return null;

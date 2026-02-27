@@ -211,6 +211,43 @@ export function getCoreToolDefinitions() {
       description: 'Get the currently active ServiceNow instance name and URL',
       inputSchema: { type: 'object', properties: {}, required: [] },
     },
+    {
+      name: 'create_ci_relationship',
+      description: '[Write] Create a relationship between two CMDB Configuration Items',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          parent: { type: 'string', description: 'Parent CI sys_id' },
+          child: { type: 'string', description: 'Child CI sys_id' },
+          type: { type: 'string', description: 'Relationship type (e.g. "Runs on::Runs")' },
+        },
+        required: ['parent', 'child', 'type'],
+      },
+    },
+    {
+      name: 'cmdb_impact_analysis',
+      description: 'Analyze the downstream impact of a Configuration Item change or outage',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ci_sys_id: { type: 'string', description: 'CI sys_id to analyze' },
+          depth: { type: 'number', description: 'Relationship depth to traverse (default: 2)' },
+        },
+        required: ['ci_sys_id'],
+      },
+    },
+    {
+      name: 'run_discovery_scan',
+      description: '[Write] Trigger a ServiceNow Discovery scan for network/infrastructure',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          schedule_id: { type: 'string', description: 'Discovery schedule sys_id to run' },
+          mid_server: { type: 'string', description: 'Optional MID server name' },
+        },
+        required: ['schedule_id'],
+      },
+    },
   ];
 }
 
@@ -302,6 +339,59 @@ export async function executeCoreToolCall(
         url: instanceManager.getCurrentUrl(),
         all_instances: instanceManager.listNames(),
       };
+
+    case 'create_ci_relationship': {
+      requireWrite();
+      if (!args.parent || !args.child || !args.type)
+        throw new ServiceNowError('parent, child, and type are required', 'INVALID_REQUEST');
+      const result = await client.createRecord('cmdb_rel_ci', {
+        parent: args.parent,
+        child: args.child,
+        type: args.type,
+      });
+      return { ...result, summary: `Created CI relationship: ${args.parent} -> ${args.child} (${args.type})` };
+    }
+
+    case 'cmdb_impact_analysis': {
+      if (!args.ci_sys_id) throw new ServiceNowError('ci_sys_id is required', 'INVALID_REQUEST');
+      const maxDepth = args.depth || 2;
+      const visited = new Set<string>();
+      const impactTree: any[] = [];
+
+      async function traverse(ciSysId: string, currentDepth: number): Promise<any[]> {
+        if (currentDepth > maxDepth || visited.has(ciSysId)) return [];
+        visited.add(ciSysId);
+        const resp = await client.queryRecords({
+          table: 'cmdb_rel_ci',
+          query: `parent=${ciSysId}`,
+          fields: 'sys_id,child,type,parent',
+          limit: 100,
+        });
+        const children: any[] = [];
+        for (const rel of resp.records) {
+          const childId = typeof rel.child === 'object' ? (rel.child as any).value : rel.child;
+          const downstream = await traverse(childId, currentDepth + 1);
+          children.push({ relationship: rel, downstream });
+        }
+        return children;
+      }
+
+      const downstream = await traverse(args.ci_sys_id, 1);
+      impactTree.push({ ci_sys_id: args.ci_sys_id, depth: maxDepth, downstream });
+      return { impact_analysis: impactTree, total_impacted: visited.size - 1 };
+    }
+
+    case 'run_discovery_scan': {
+      requireWrite();
+      if (!args.schedule_id) throw new ServiceNowError('schedule_id is required', 'INVALID_REQUEST');
+      const data: Record<string, any> = {
+        dsc_schedule: args.schedule_id,
+        state: 'active',
+      };
+      if (args.mid_server) data.mid_server = args.mid_server;
+      const result = await client.createRecord('discovery_status', data);
+      return { ...result, summary: `Triggered discovery scan for schedule ${args.schedule_id}` };
+    }
 
     default:
       return null; // not handled here

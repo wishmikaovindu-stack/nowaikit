@@ -185,6 +185,33 @@ export function getNotificationToolDefinitions() {
         required: [],
       },
     },
+    {
+      name: 'send_emergency_broadcast',
+      description: '[Write] Send emergency broadcast notification to users or groups',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          subject: { type: 'string', description: 'Broadcast subject' },
+          body: { type: 'string', description: 'Message body' },
+          recipients: { type: 'string', description: 'Comma-separated user/group sys_ids' },
+          channels: { type: 'string', description: 'Delivery channels: email,sms,push' },
+        },
+        required: ['subject', 'body', 'recipients'],
+      },
+    },
+    {
+      name: 'schedule_notification',
+      description: '[Write] Schedule a notification for future delivery',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          notification_id: { type: 'string', description: 'Notification rule sys_id' },
+          schedule: { type: 'string', description: 'Cron expression or ISO date' },
+          active: { type: 'boolean', description: 'Whether the notification is active' },
+        },
+        required: ['notification_id', 'schedule'],
+      },
+    },
   ];
 }
 
@@ -325,6 +352,29 @@ export async function executeNotificationToolCall(
         limit: args.limit ?? 25,
         fields: 'sys_id,user,notification,receive_emails,sys_updated_on',
       });
+    }
+    case 'send_emergency_broadcast': {
+      requireWrite();
+      if (!args.subject || !args.body || !args.recipients)
+        throw new ServiceNowError('subject, body, and recipients are required', 'INVALID_REQUEST');
+      const result = await client.createRecord('sys_email', {
+        type: 'send-ready',
+        subject: args.subject,
+        body_text: args.body,
+        recipients: args.recipients,
+        importance: 'high',
+      });
+      return { ...result, summary: `Sent emergency broadcast: "${args.subject}" to ${args.recipients}` };
+    }
+    case 'schedule_notification': {
+      requireWrite();
+      if (!args.notification_id || !args.schedule)
+        throw new ServiceNowError('notification_id and schedule are required', 'INVALID_REQUEST');
+      const result = await client.updateRecord('sysevent_email_action', args.notification_id, {
+        schedule: args.schedule,
+        active: args.active !== false ? 'true' : 'false',
+      });
+      return { ...result, summary: `Scheduled notification ${args.notification_id} with schedule: ${args.schedule}` };
     }
     default:
       return null;

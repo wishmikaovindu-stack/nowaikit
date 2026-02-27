@@ -121,6 +121,31 @@ export function getItamToolDefinitions() {
         required: [],
       },
     },
+    {
+      name: 'track_asset_lifecycle',
+      description: 'Track asset lifecycle events and stage transitions',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          asset_id: { type: 'string', description: 'Asset tag or sys_id' },
+          new_stage: { type: 'string', description: 'Lifecycle stage: in_stock/in_use/in_maintenance/retired/disposed' },
+          notes: { type: 'string', description: 'Transition notes' },
+        },
+        required: ['asset_id', 'new_stage'],
+      },
+    },
+    {
+      name: 'get_license_optimization',
+      description: 'Analyze software license usage and recommend optimizations',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          software_name: { type: 'string', description: 'Optional filter by software name' },
+          threshold_pct: { type: 'number', description: 'Usage threshold percentage (default: 80)' },
+        },
+        required: [],
+      },
+    },
   ];
 }
 
@@ -219,6 +244,67 @@ export async function executeItamToolCall(
         fields: 'sys_id,number,short_description,vendor,start_date,end_date,cost,active,sys_updated_on',
       });
       return { count: resp.count, contracts: resp.records };
+    }
+
+    case 'track_asset_lifecycle': {
+      if (!args.asset_id || !args.new_stage)
+        throw new ServiceNowError('asset_id and new_stage are required', 'INVALID_REQUEST');
+      requireWrite();
+      const stageMap: Record<string, string> = {
+        in_stock: '6', in_use: '1', in_maintenance: '7', retired: '8', disposed: '9',
+      };
+      let sysId = args.asset_id;
+      if (!/^[0-9a-f]{32}$/i.test(args.asset_id)) {
+        const resp = await client.queryRecords({ table: 'alm_asset', query: `asset_tag=${args.asset_id}^ORsys_id=${args.asset_id}`, limit: 1 });
+        if (resp.count === 0) throw new ServiceNowError(`Asset not found: ${args.asset_id}`, 'NOT_FOUND');
+        sysId = resp.records[0].sys_id;
+      }
+      const result = await client.updateRecord('alm_asset', sysId, {
+        install_status: stageMap[args.new_stage] || args.new_stage,
+        work_notes: args.notes || '',
+      });
+      return { action: 'lifecycle_updated', sys_id: sysId, new_stage: args.new_stage, ...result };
+    }
+
+    case 'get_license_optimization': {
+      const threshold = args.threshold_pct || 80;
+      let query = '';
+      if (args.software_name) query = `display_nameLIKE${args.software_name}`;
+      const resp = await client.queryRecords({
+        table: 'alm_license',
+        query: query || undefined,
+        limit: 100,
+        fields: 'sys_id,display_name,product,license_count,license_available,license_inuse,cost,expiry_date',
+      });
+      const recommendations = resp.records.map((r: any) => {
+        const total = Number(r.license_count) || 0;
+        const inUse = Number(r.license_inuse) || 0;
+        const available = Number(r.license_available) || 0;
+        const usagePct = total > 0 ? Math.round((inUse / total) * 100) : 0;
+        let recommendation = 'optimal';
+        if (usagePct < threshold) recommendation = 'underutilized — consider reducing licenses';
+        if (inUse > total) recommendation = 'over-allocated — purchase additional licenses';
+        return {
+          license: r.display_name,
+          product: r.product,
+          total,
+          in_use: inUse,
+          available,
+          usage_pct: usagePct,
+          cost: r.cost,
+          expires: r.expiry_date,
+          recommendation,
+        };
+      });
+      const underutilized = recommendations.filter((r: any) => r.recommendation.startsWith('underutilized'));
+      const overAllocated = recommendations.filter((r: any) => r.recommendation.startsWith('over-allocated'));
+      return {
+        total_licenses: resp.count,
+        threshold_pct: threshold,
+        underutilized_count: underutilized.length,
+        over_allocated_count: overAllocated.length,
+        recommendations,
+      };
     }
 
     default:

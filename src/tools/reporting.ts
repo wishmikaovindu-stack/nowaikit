@@ -229,6 +229,38 @@ export function getReportingToolDefinitions() {
         required: [],
       },
     },
+    {
+      name: 'create_scheduled_report',
+      description: '[Write] Schedule a report for recurring email delivery',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          report_id: { type: 'string', description: 'Report sys_id' },
+          frequency: { type: 'string', description: 'Frequency: daily/weekly/monthly' },
+          recipients: { type: 'string', description: 'Email addresses' },
+          day_of_week: { type: 'string', description: 'Day of week (for weekly frequency)' },
+          day_of_month: { type: 'number', description: 'Day of month (for monthly frequency)' },
+          format: { type: 'string', description: 'Export format: pdf/csv/xlsx' },
+        },
+        required: ['report_id', 'frequency', 'recipients'],
+      },
+    },
+    {
+      name: 'create_kpi',
+      description: '[Write] Create a Key Performance Indicator from ServiceNow data',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'KPI name' },
+          table: { type: 'string', description: 'Source table' },
+          field: { type: 'string', description: 'Aggregate field' },
+          aggregate: { type: 'string', description: 'Aggregate function: COUNT/AVG/SUM/MIN/MAX' },
+          conditions: { type: 'string', description: 'Encoded query filter' },
+          unit: { type: 'string', description: 'Display unit' },
+        },
+        required: ['name', 'table', 'aggregate'],
+      },
+    },
   ];
 }
 
@@ -382,6 +414,35 @@ export async function executeReportingToolCall(
         fields: 'sys_id,sysauto,status,run_time,error_message,sys_created_on',
       });
       return { count: resp.count, history: resp.records };
+    }
+    case 'create_scheduled_report': {
+      requireWrite();
+      if (!args.report_id || !args.frequency || !args.recipients)
+        throw new ServiceNowError('report_id, frequency, and recipients are required', 'INVALID_REQUEST');
+      const result = await client.createRecord('sys_report_schedule', {
+        report: args.report_id,
+        frequency: args.frequency,
+        email: args.recipients,
+        day: args.day_of_week || '',
+        day_of_month: args.day_of_month || '',
+        format: args.format || 'pdf',
+        active: 'true',
+      });
+      return { ...result, summary: `Created scheduled report delivery (${args.frequency}) for report ${args.report_id}` };
+    }
+    case 'create_kpi': {
+      requireWrite();
+      if (!args.name || !args.table || !args.aggregate)
+        throw new ServiceNowError('name, table, and aggregate are required', 'INVALID_REQUEST');
+      const result = await client.createRecord('pa_indicators', {
+        name: args.name,
+        cube: args.table,
+        aggregate: args.aggregate,
+        conditions: args.conditions || '',
+        field: args.field || '',
+        unit: args.unit || '',
+      });
+      return { ...result, summary: `Created KPI "${args.name}" (${args.aggregate} on ${args.table})` };
     }
     default:
       return null;
