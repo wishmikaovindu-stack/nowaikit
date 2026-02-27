@@ -74,32 +74,47 @@ export default function Setup({ onComplete, onClose, existingGroups = [] }: Prop
   const update = (key: keyof FormState, val: string | boolean) =>
     setForm(f => ({ ...f, [key]: val }));
 
-  type NowaikitBridge = {
-    testConnection: (c: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>;
-    saveConfig: (c: Record<string, unknown>) => Promise<{ ok: boolean; message?: string }>;
-  };
-  const bridge = () =>
-    (window as unknown as { nowaikit?: NowaikitBridge }).nowaikit;
+  // Use the Electron API (window.api) or fall back gracefully
+  function getApi(): ElectronAPI | undefined {
+    return typeof window !== 'undefined' ? window.api : undefined;
+  }
 
   async function testConnection() {
     setTestStatus('testing');
     try {
-      const nw = bridge();
-      if (!nw) throw new Error('Desktop bridge not available');
-      const result = await nw.testConnection({
+      const api = getApi();
+      const instance: InstanceConfig = {
+        name: form.instanceName,
         instanceUrl: form.instanceUrl,
         authMethod: form.authMethod,
         username: form.username,
         password: form.password,
         clientId: form.clientId,
         clientSecret: form.clientSecret,
-      });
-      if (result.ok) {
-        setTestStatus('ok');
-        setTestMsg(result.message);
+        toolPackage: form.toolPackage,
+        writeEnabled: form.writeEnabled,
+      };
+      if (api) {
+        const result = await api.testInstance(instance);
+        if (result.success) {
+          setTestStatus('ok');
+          setTestMsg('Connection successful');
+        } else {
+          setTestStatus('fail');
+          setTestMsg(result.error ?? 'Connection failed');
+        }
       } else {
-        setTestStatus('fail');
-        setTestMsg(result.message);
+        // Browser mode — attempt a basic fetch test
+        try {
+          const resp = await fetch(`${form.instanceUrl}/api/now/table/sys_properties?sysparm_limit=1`, {
+            headers: form.username ? { 'Authorization': 'Basic ' + btoa(`${form.username}:${form.password}`) } : {},
+          });
+          if (resp.ok) { setTestStatus('ok'); setTestMsg('Connection successful'); }
+          else { setTestStatus('fail'); setTestMsg(`HTTP ${resp.status} — check credentials`); }
+        } catch {
+          setTestStatus('fail');
+          setTestMsg('Could not reach instance — check URL and CORS settings');
+        }
       }
     } catch (err) {
       setTestStatus('fail');
@@ -108,11 +123,22 @@ export default function Setup({ onComplete, onClose, existingGroups = [] }: Prop
   }
 
   async function saveAndFinish() {
-    const nw = bridge();
-    if (nw) {
-      const result = await nw.saveConfig({ ...form });
-      if (!result.ok) {
-        setSaveMsg(result.message ?? 'Failed to save config');
+    const api = getApi();
+    if (api) {
+      const instance: InstanceConfig = {
+        name: form.instanceName,
+        instanceUrl: form.instanceUrl,
+        authMethod: form.authMethod,
+        username: form.username,
+        password: form.password,
+        clientId: form.clientId,
+        clientSecret: form.clientSecret,
+        toolPackage: form.toolPackage,
+        writeEnabled: form.writeEnabled,
+      };
+      const result = await api.addInstance(instance);
+      if (!result.success) {
+        setSaveMsg(result.error ?? 'Failed to save config');
         return;
       }
     }
@@ -138,6 +164,11 @@ export default function Setup({ onComplete, onClose, existingGroups = [] }: Prop
   return (
     <div style={styles.container}>
       <div style={styles.card}>
+        {/* Close button — always visible when onClose is available */}
+        {onClose && step !== 'done' && (
+          <button onClick={onClose} style={{ position:'absolute', top:12, right:12, background:'transparent', border:'none', color:'var(--dim)', fontSize:'1.2rem', cursor:'pointer', padding:'4px 8px', borderRadius:4, zIndex:10 }} title="Close">✕</button>
+        )}
+
         {step !== 'welcome' && step !== 'done' && (
           <div style={styles.progress}>
             {Array.from({ length: totalVisible }).map((_, i) => (
@@ -148,9 +179,6 @@ export default function Setup({ onComplete, onClose, existingGroups = [] }: Prop
 
         {step === 'welcome' && (
           <>
-            {onClose && (
-              <button onClick={onClose} style={{ position:'absolute', top:12, right:12, background:'transparent', border:'none', color:'var(--dim)', fontSize:'1.2rem', cursor:'pointer', padding:'4px 8px', borderRadius:4 }} title="Close">✕</button>
-            )}
             <h1 style={styles.title}>Welcome to nowaikit</h1>
             <p style={styles.sub}>Connect your ServiceNow instance to AI in a few steps. No config files needed.</p>
             <div style={{ display:'flex', gap:12 }}>
@@ -162,9 +190,6 @@ export default function Setup({ onComplete, onClose, existingGroups = [] }: Prop
 
         {step === 'url' && (
           <>
-            {onClose && (
-              <button onClick={onClose} style={{ position:'absolute', top:12, right:12, background:'transparent', border:'none', color:'var(--dim)', fontSize:'1.2rem', cursor:'pointer', padding:'4px 8px', borderRadius:4 }} title="Close">✕</button>
-            )}
             <h2 style={styles.title}>ServiceNow Instance</h2>
             <label style={styles.label}>Instance URL</label>
             <input style={styles.input} value={form.instanceUrl} onChange={e => update('instanceUrl', e.target.value)} placeholder="https://yourcompany.service-now.com" />
