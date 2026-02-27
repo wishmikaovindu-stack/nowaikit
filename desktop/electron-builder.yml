@@ -18,8 +18,10 @@ extraResources:
     to: server
     filter:
       - "**/*"
+  - from: ../package.json
+    to: server/package.json
   - from: ../node_modules
-    to: server-modules
+    to: server/node_modules
     filter:
       - "@modelcontextprotocol/**"
       - "@inquirer/**"

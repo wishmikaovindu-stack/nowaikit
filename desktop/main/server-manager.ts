@@ -68,11 +68,16 @@ export class ServerManager {
     try {
       const env = { ...process.env, ...this.buildEnv(instance) };
 
+      // Server directory — contains package.json ("type":"module") and node_modules
+      const serverDir = join(serverPath, '..');
+
       // In packaged Electron, 'node' may not be in PATH.
       // Use ELECTRON_RUN_AS_NODE=1 with process.execPath to run the
       // Electron binary as a regular Node.js process.
+      // Set cwd to the server directory so Node resolves package.json and modules.
       this.process = spawn(process.execPath, [serverPath], {
         env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+        cwd: serverDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });

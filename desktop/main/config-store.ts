@@ -1,6 +1,7 @@
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 import type { InstanceConfig } from './index';
 
 interface AppConfig {
@@ -19,10 +20,22 @@ const DEFAULT_CONFIG: AppConfig = {
   autoUpdate: true,
 };
 
+// Fields that contain sensitive data and should be encrypted
+const SENSITIVE_INSTANCE_FIELDS: (keyof InstanceConfig)[] = [
+  'password', 'clientSecret',
+];
+
+const SENSITIVE_SETTINGS_PATH = 'settings.providers'; // nested path in config
+
+// Encryption prefix to identify encrypted values
+const ENC_PREFIX = 'enc:';
+const ALGORITHM = 'aes-256-gcm';
+
 export class ConfigStore {
   private configPath: string;
   private auditPath: string;
   private config: AppConfig;
+  private encKey: Buffer | null = null;
 
   constructor() {
     const userDataPath = app?.getPath?.('userData') || join(process.env.HOME || process.env.USERPROFILE || '.', '.config', 'nowaikit');
@@ -30,14 +43,150 @@ export class ConfigStore {
 
     this.configPath = join(userDataPath, 'config.json');
     this.auditPath = join(userDataPath, 'audit.jsonl');
+
+    // Derive encryption key using Electron's safeStorage (OS keychain)
+    this.initEncryptionKey();
+
     this.config = this.load();
+  }
+
+  /**
+   * Initialize the encryption key.
+   * Uses Electron's safeStorage API to store a master key in the OS keychain.
+   * Falls back to a machine-derived key if safeStorage is unavailable.
+   */
+  private initEncryptionKey(): void {
+    try {
+      if (safeStorage.isEncryptionAvailable()) {
+        // Use safeStorage to encrypt/decrypt a stable seed
+        const keyPath = join(this.configPath, '..', '.keyring');
+        let seed: Buffer;
+
+        if (existsSync(keyPath)) {
+          const encrypted = readFileSync(keyPath);
+          seed = safeStorage.decryptString(encrypted) ? Buffer.from(safeStorage.decryptString(encrypted), 'hex') : randomBytes(32);
+        } else {
+          seed = randomBytes(32);
+          const encrypted = safeStorage.encryptString(seed.toString('hex'));
+          writeFileSync(keyPath, encrypted);
+        }
+
+        this.encKey = scryptSync(seed, 'nowaikit-salt', 32);
+      }
+    } catch {
+      // safeStorage not available (e.g., in tests or very early init)
+    }
+
+    // Fallback: derive key from machine identifiers
+    if (!this.encKey) {
+      const fallbackSeed = `nowaikit-${process.env.USER || 'default'}-${process.arch}-${process.platform}`;
+      this.encKey = scryptSync(fallbackSeed, 'nowaikit-fallback-salt', 32);
+    }
+  }
+
+  private encrypt(plaintext: string): string {
+    if (!this.encKey || !plaintext) return plaintext;
+    try {
+      const iv = randomBytes(16);
+      const cipher = createCipheriv(ALGORITHM, this.encKey, iv);
+      let encrypted = cipher.update(plaintext, 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+      const tag = cipher.getAuthTag().toString('hex');
+      return `${ENC_PREFIX}${iv.toString('hex')}:${tag}:${encrypted}`;
+    } catch {
+      return plaintext; // fallback to plaintext on error
+    }
+  }
+
+  private decrypt(value: string): string {
+    if (!this.encKey || !value || !value.startsWith(ENC_PREFIX)) return value;
+    try {
+      const data = value.slice(ENC_PREFIX.length);
+      const [ivHex, tagHex, encrypted] = data.split(':');
+      const iv = Buffer.from(ivHex, 'hex');
+      const tag = Buffer.from(tagHex, 'hex');
+      const decipher = createDecipheriv(ALGORITHM, this.encKey, iv);
+      decipher.setAuthTag(tag);
+      let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+      return decrypted;
+    } catch {
+      return value; // return as-is if decryption fails (maybe old plaintext value)
+    }
+  }
+
+  /**
+   * Encrypt sensitive fields in an instance config before saving.
+   */
+  private encryptInstance(instance: InstanceConfig): InstanceConfig {
+    const copy = { ...instance };
+    for (const field of SENSITIVE_INSTANCE_FIELDS) {
+      const val = copy[field];
+      if (typeof val === 'string' && val && !val.startsWith(ENC_PREFIX)) {
+        (copy as Record<string, unknown>)[field] = this.encrypt(val);
+      }
+    }
+    return copy;
+  }
+
+  /**
+   * Decrypt sensitive fields in an instance config after loading.
+   */
+  private decryptInstance(instance: InstanceConfig): InstanceConfig {
+    const copy = { ...instance };
+    for (const field of SENSITIVE_INSTANCE_FIELDS) {
+      const val = copy[field];
+      if (typeof val === 'string' && val?.startsWith(ENC_PREFIX)) {
+        (copy as Record<string, unknown>)[field] = this.decrypt(val);
+      }
+    }
+    return copy;
+  }
+
+  /**
+   * Encrypt API keys in settings.providers before saving.
+   */
+  private encryptSettings(config: Record<string, unknown>): Record<string, unknown> {
+    const settings = config.settings as Record<string, unknown> | undefined;
+    if (!settings?.providers) return config;
+
+    const providers = { ...(settings.providers as Record<string, Record<string, unknown>>) };
+    for (const [id, provider] of Object.entries(providers)) {
+      if (provider.apiKey && typeof provider.apiKey === 'string' && !provider.apiKey.startsWith(ENC_PREFIX)) {
+        providers[id] = { ...provider, apiKey: this.encrypt(provider.apiKey) };
+      }
+    }
+    return { ...config, settings: { ...settings, providers } };
+  }
+
+  /**
+   * Decrypt API keys in settings.providers after loading.
+   */
+  private decryptSettings(config: Record<string, unknown>): Record<string, unknown> {
+    const settings = config.settings as Record<string, unknown> | undefined;
+    if (!settings?.providers) return config;
+
+    const providers = { ...(settings.providers as Record<string, Record<string, unknown>>) };
+    for (const [id, provider] of Object.entries(providers)) {
+      if (provider.apiKey && typeof provider.apiKey === 'string' && provider.apiKey.startsWith(ENC_PREFIX)) {
+        providers[id] = { ...provider, apiKey: this.decrypt(provider.apiKey) };
+      }
+    }
+    return { ...config, settings: { ...settings, providers } };
   }
 
   private load(): AppConfig {
     try {
       if (existsSync(this.configPath)) {
         const raw = readFileSync(this.configPath, 'utf8');
-        return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+        let parsed = { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+        // Decrypt instances
+        if (parsed.instances) {
+          parsed.instances = parsed.instances.map((i: InstanceConfig) => this.decryptInstance(i));
+        }
+        // Decrypt settings (API keys)
+        parsed = this.decryptSettings(parsed) as unknown as AppConfig;
+        return parsed;
       }
     } catch {
       // Corrupted config, reset
@@ -46,7 +195,16 @@ export class ConfigStore {
   }
 
   private save(): void {
-    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2), 'utf8');
+    // Encrypt before writing to disk
+    let toSave: Record<string, unknown> = { ...this.config };
+
+    // Encrypt instance passwords
+    toSave.instances = (this.config.instances || []).map(i => this.encryptInstance(i));
+
+    // Encrypt settings API keys
+    toSave = this.encryptSettings(toSave);
+
+    writeFileSync(this.configPath, JSON.stringify(toSave, null, 2), 'utf8');
   }
 
   get(key: string): unknown {
