@@ -91,6 +91,8 @@ export default function Setup({ onComplete, onClose, existingGroups = [] }: Prop
         clientSecret: form.clientSecret,
         toolPackage: form.toolPackage,
         writeEnabled: form.writeEnabled,
+        group: form.group || 'Default',
+        environment: form.environment || undefined,
       };
       if (api) {
         const result = await api.testInstance(instance);
@@ -133,6 +135,8 @@ export default function Setup({ onComplete, onClose, existingGroups = [] }: Prop
         clientSecret: form.clientSecret,
         toolPackage: form.toolPackage,
         writeEnabled: form.writeEnabled,
+        group: form.group || 'Default',
+        environment: form.environment || undefined,
       };
       const result = await api.addInstance(instance);
       if (!result.success) {

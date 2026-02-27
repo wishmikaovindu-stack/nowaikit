@@ -11,6 +11,8 @@ interface InstanceConfig {
   toolPackage?: string;
   writeEnabled?: boolean;
   nowAssistEnabled?: boolean;
+  group?: string;
+  environment?: string;
 }
 
 interface VersionInfo {

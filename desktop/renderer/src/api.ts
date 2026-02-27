@@ -249,8 +249,9 @@ const webApi: ElectronAPI = {
       ? 'You are NowAIKit, an AI assistant for ServiceNow. Use tools to fetch real data — never make up data.\n\nUse "query_records" with correct table: incident, change_request, problem, task, sys_user, cmdb_ci.\nQuery syntax: active=true, priority=1, ORDERBYDESCsys_created_on, nameLIKEtext.\nIMPORTANT: Do NOT add assigned_to filter unless user explicitly says "my" or "assigned to me". Query ALL matching records by default.'
       : undefined;
 
-    // Detect if Vite dev proxy is available (dev mode on localhost:5173)
-    const useProxy = window.location.port === '5173';
+    // Always use proxy paths (/api/ai/*) in browser mode.
+    // These are handled by: Vite dev server (dev), serve.js (preview/production), or reverse proxy (nginx etc.)
+    // Google Gemini also supports direct CORS calls as fallback.
 
     try {
       if (provider === 'anthropic') {
@@ -262,8 +263,7 @@ const webApi: ElectronAPI = {
         if (systemPrompt) body.system = systemPrompt;
         if (anthropicTools && anthropicTools.length > 0) body.tools = anthropicTools;
 
-        const url = useProxy ? '/api/ai/anthropic/v1/messages' : 'https://api.anthropic.com/v1/messages';
-        const res = await fetch(url, {
+        const res = await fetch('/api/ai/anthropic/v1/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
           body: JSON.stringify(body),
@@ -273,10 +273,6 @@ const webApi: ElectronAPI = {
         return { content: data.content as Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>, stop_reason: data.stop_reason as string };
 
       } else if (provider === 'google') {
-        const directUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const proxyUrl = `/api/ai/google/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const url = useProxy ? proxyUrl : directUrl;
-
         const contents = messages.map((m: { role: string; content: unknown }) => {
           const parts: Array<Record<string, unknown>> = [];
           if (typeof m.content === 'string') {
@@ -297,7 +293,17 @@ const webApi: ElectronAPI = {
           body.tools = [{ functionDeclarations: toolDefs.map(t => ({ name: t.name, description: t.description, parameters: t.inputSchema || { type: 'object', properties: {} } })) }];
         }
 
-        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        // Try proxy first, fall back to direct (Google supports CORS)
+        const proxyUrl = `/api/ai/google/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const directUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        let res: Response;
+        try {
+          res = await fetch(proxyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          // If proxy returns 404 or non-JSON, it means no proxy server — fall back to direct
+          if (res.status === 404) throw new Error('proxy_not_available');
+        } catch {
+          res = await fetch(directUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        }
         if (!res.ok) return { error: `Google AI error ${res.status}: ${await res.text()}` };
         const data = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string; functionCall?: { name: string; args: Record<string, unknown> } }> } }> };
         const parts = data.candidates?.[0]?.content?.parts ?? [];
@@ -310,17 +316,12 @@ const webApi: ElectronAPI = {
 
       } else {
         // OpenAI-compatible (OpenAI, Groq, OpenRouter)
-        const directEndpoints: Record<string, string> = {
-          openai: 'https://api.openai.com/v1/chat/completions',
-          groq: 'https://api.groq.com/openai/v1/chat/completions',
-          openrouter: 'https://openrouter.ai/api/v1/chat/completions',
-        };
         const proxyEndpoints: Record<string, string> = {
           openai: '/api/ai/openai/v1/chat/completions',
           groq: '/api/ai/groq/openai/v1/chat/completions',
           openrouter: '/api/ai/openrouter/api/v1/chat/completions',
         };
-        const url = useProxy ? proxyEndpoints[provider] : directEndpoints[provider];
+        const url = proxyEndpoints[provider];
         if (!url) return { error: `Unknown provider: ${provider}` };
 
         // Convert messages to OpenAI format
@@ -374,7 +375,7 @@ const webApi: ElectronAPI = {
       }
     } catch (err) {
       if (err instanceof TypeError && String(err.message).includes('Failed to fetch')) {
-        return { error: `CORS blocked. Run "npm run dev:web" (port 5173) for full AI provider support in the browser, or use the desktop app.` };
+        return { error: 'AI proxy not available. Run "npm run serve" or "npm run dev:web" for browser AI chat, or use the desktop app.' };
       }
       return { error: err instanceof Error ? err.message : 'Request failed' };
     }

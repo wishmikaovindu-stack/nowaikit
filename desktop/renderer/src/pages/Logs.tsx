@@ -155,7 +155,7 @@ export default function Logs(): React.ReactElement {
             </thead>
             <tbody>
               {pageEntries.map((e, i) => (
-                <tr key={page * PAGE_SIZE + i} onClick={() => setSelected(selected === e ? null : e)} style={{ cursor:'pointer', background: selected === e ? 'var(--surface2)' : 'transparent', transition:'background .1s' }}>
+                <tr key={page * pageSize + i} onClick={() => setSelected(selected === e ? null : e)} style={{ cursor:'pointer', background: selected === e ? 'var(--surface2)' : 'transparent', transition:'background .1s' }}>
                   <td style={{ ...td, color:'var(--text2)', fontFamily:'monospace', fontSize:'0.78rem', whiteSpace:'nowrap' }}>{fmtTime(e.ts)}</td>
                   <td style={{ ...td, fontSize:'0.75rem', color:'var(--dim)' }}>{e.event ?? '—'}</td>
                   <td style={{ ...td, fontFamily:'monospace', color:'var(--accent)', fontWeight:500 }}>{e.tool || e.resource || e.prompt || '—'}</td>
