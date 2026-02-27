@@ -1,56 +1,629 @@
-import { useEffect, useState } from 'react';
-import { api } from '../api';
+import React, { useState } from 'react';
+import type { AppSettings, AiProviderId, ThemeMode, ThemeAccent, AppInstance, Page } from '../App.js';
+import { useTheme } from '../App.js';
+import { PROVIDER_ICONS } from '../components/ProviderIcons.js';
 
-export function Settings() {
-  const [version, setVersion] = useState<VersionInfo | null>(null);
-  const [serverPath, setServerPath] = useState('');
+interface Props {
+  settings: AppSettings;
+  onSave: (s: AppSettings) => Promise<void>;
+  activeInstance?: AppInstance;
+  onNavigate?: (p: Page) => void;
+}
 
-  useEffect(() => {
-    api.getVersion().then(setVersion);
-    api.getServerPath().then(setServerPath);
-  }, []);
+// ── Provider meta ──────────────────────────────────────────────────────────────
+const PROVIDERS: {
+  id: AiProviderId;
+  label: string;
+  icon: string;
+  keyLabel: string;
+  keyPlaceholder: string;
+  portalUrl: string;
+  portalLabel: string;
+  subscriptionNote: string;
+  signInSteps: string[];
+}[] = [
+  {
+    id: 'anthropic',
+    label: 'Claude (Anthropic)',
+    icon: '◈',
+    keyLabel: 'Anthropic API Key',
+    keyPlaceholder: 'sk-ant-api03-…',
+    portalUrl: 'https://console.anthropic.com/settings/keys',
+    portalLabel: 'Anthropic Console',
+    subscriptionNote: 'Anthropic API access is separate from Claude.ai subscriptions. You need an API key from the Anthropic Console.',
+    signInSteps: [
+      'Click "Open Anthropic Console" below',
+      'Sign in with your Anthropic account',
+      'Go to Settings → API Keys',
+      'Click "Create Key", copy it',
+      'Paste the key in the field that appears',
+    ],
+  },
+  {
+    id: 'openai',
+    label: 'ChatGPT / Codex (OpenAI)',
+    icon: '◎',
+    keyLabel: 'OpenAI API Key',
+    keyPlaceholder: 'sk-proj-…',
+    portalUrl: 'https://platform.openai.com/api-keys',
+    portalLabel: 'OpenAI Platform',
+    subscriptionNote: 'ChatGPT Plus / Pro subscriptions give access to chat.openai.com but not the API. You need a separate API key from the OpenAI Platform.',
+    signInSteps: [
+      'Click "Open OpenAI Platform" below',
+      'Sign in with your OpenAI account',
+      'Click "Create new secret key"',
+      'Copy the key (shown only once)',
+      'Paste the key in the field that appears',
+    ],
+  },
+  {
+    id: 'google',
+    label: 'Gemini (Google AI)',
+    icon: '◇',
+    keyLabel: 'Google AI API Key',
+    keyPlaceholder: 'AIza…',
+    portalUrl: 'https://aistudio.google.com/app/apikey',
+    portalLabel: 'Google AI Studio',
+    subscriptionNote: 'Sign in with your Google account to access Gemini API via Google AI Studio. Free tier available for personal use.',
+    signInSteps: [
+      'Click "Sign in with Google" below',
+      'Sign in with your Google account',
+      'Click "Create API key"',
+      'Copy the generated key',
+      'Paste the key in the field that appears',
+    ],
+  },
+  {
+    id: 'groq',
+    label: 'Groq (Free)',
+    icon: '⚡',
+    keyLabel: 'Groq API Key',
+    keyPlaceholder: 'gsk_…',
+    portalUrl: 'https://console.groq.com/keys',
+    portalLabel: 'Groq Console',
+    subscriptionNote: 'Groq offers free, ultra-fast inference for open models like Llama 3.3 and Mixtral. Generous free tier with no credit card required.',
+    signInSteps: [
+      'Click "Open Groq Console" below',
+      'Sign up or sign in (free)',
+      'Go to API Keys',
+      'Click "Create API Key", copy it',
+      'Paste the key in the field that appears',
+    ],
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter (Multi-Provider)',
+    icon: '⊕',
+    keyLabel: 'OpenRouter API Key',
+    keyPlaceholder: 'sk-or-v1-…',
+    portalUrl: 'https://openrouter.ai/keys',
+    portalLabel: 'OpenRouter',
+    subscriptionNote: 'OpenRouter is a unified gateway to 200+ models from OpenAI, Anthropic, Google, xAI, Meta, DeepSeek and more. Many models have free tiers — no credit card required.',
+    signInSteps: [
+      'Click "Open OpenRouter" below',
+      'Sign up or sign in (free)',
+      'Go to Keys',
+      'Click "Create Key", copy it',
+      'Paste the key in the field that appears',
+    ],
+  },
+];
+
+const MODELS_BY_PROVIDER: Record<AiProviderId, { value: string; label: string; desc: string }[]> = {
+  anthropic: [
+    { value: 'claude-opus-4-6',           label: 'Claude Opus 4.6',   desc: 'Most capable, complex reasoning' },
+    { value: 'claude-sonnet-4-6',         label: 'Claude Sonnet 4.6', desc: 'Balanced — recommended' },
+    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5',  desc: 'Fastest, lowest cost' },
+  ],
+  openai: [
+    { value: 'gpt-5.2',         label: 'GPT-5.2',         desc: 'Latest flagship — most capable' },
+    { value: 'gpt-5.2-pro',     label: 'GPT-5.2 Pro',     desc: 'Highest quality, extended thinking' },
+    { value: 'gpt-5.1',         label: 'GPT-5.1',         desc: 'Previous flagship — strong all-round' },
+    { value: 'gpt-5-mini',      label: 'GPT-5 mini',      desc: 'Fast & affordable — great for tool use' },
+    { value: 'gpt-5-nano',      label: 'GPT-5 nano',      desc: 'Ultra-fast, lowest cost' },
+    { value: 'gpt-4.1',         label: 'GPT-4.1',         desc: 'Strong coding & instruction following' },
+    { value: 'gpt-4.1-mini',    label: 'GPT-4.1 mini',    desc: 'Fast & budget-friendly' },
+    { value: 'gpt-4o',          label: 'GPT-4o',          desc: 'Versatile multimodal' },
+    { value: 'o3',              label: 'o3',               desc: 'Advanced reasoning' },
+    { value: 'o4-mini',         label: 'o4 mini',          desc: 'Fast reasoning' },
+  ],
+  google: [
+    { value: 'gemini-3.1-pro-preview',  label: 'Gemini 3.1 Pro',  desc: 'Latest — state-of-the-art reasoning' },
+    { value: 'gemini-3-pro-preview',     label: 'Gemini 3 Pro',    desc: 'Frontier-class multimodal' },
+    { value: 'gemini-3-flash-preview',   label: 'Gemini 3 Flash',  desc: 'Fast & capable — best value' },
+    { value: 'gemini-2.5-flash',         label: 'Gemini 2.5 Flash', desc: 'Previous gen — stable & proven' },
+    { value: 'gemini-2.5-pro',           label: 'Gemini 2.5 Pro',   desc: 'Previous gen — advanced reasoning' },
+  ],
+  groq: [
+    { value: 'meta-llama/llama-4-maverick-17b-128e-instruct', label: 'Llama 4 Maverick', desc: 'Best quality — 128 experts (recommended)' },
+    { value: 'meta-llama/llama-4-scout-17b-16e-instruct',     label: 'Llama 4 Scout',    desc: 'Fast & efficient — 16 experts' },
+    { value: 'llama-3.3-70b-versatile',                       label: 'Llama 3.3 70B',    desc: 'Reliable workhorse — tool use' },
+    { value: 'llama-3.1-8b-instant',                          label: 'Llama 3.1 8B',     desc: 'Ultra-fast, lightweight' },
+  ],
+  openrouter: [
+    { value: 'openai/o1-pro',                                   label: 'OpenAI o1 Pro',       desc: 'High-end reasoning via OpenRouter' },
+    { value: 'xai/grok-4',                                      label: 'Grok 4 (xAI)',        desc: 'Latest xAI general-purpose model' },
+    { value: 'anthropic/claude-3.7-sonnet',                      label: 'Claude 3.7 Sonnet',   desc: 'Latest Claude variant via OpenRouter' },
+    { value: 'google/gemini-2.0-flash-001',                      label: 'Gemini 2.0 Flash',    desc: 'Google Gemini Flash variant' },
+    { value: 'deepseek/deepseek-r1:free',                        label: 'DeepSeek R1',         desc: 'Free — open reasoning model' },
+    { value: 'meta-llama/llama-4-maverick-17b-128e-instruct',    label: 'Llama 4 Maverick',    desc: 'Free — best open model' },
+    { value: 'meta-llama/llama-3.3-70b-instruct',                label: 'Llama 3.3 70B',       desc: 'Free — strong general-purpose' },
+    { value: 'google/gemma-2-9b-it:free',                        label: 'Gemma 2 9B',          desc: 'Free — lightweight Google model' },
+  ],
+};
+
+const ACCENTS: { id: ThemeAccent; color: string; label: string }[] = [
+  { id: 'blue',    color: '#4f8ef7', label: 'Blue (default)' },
+  { id: 'violet',  color: '#7c5cbf', label: 'Violet'  },
+  { id: 'sky',     color: '#38bdf8', label: 'Sky'     },
+  { id: 'emerald', color: '#22c55e', label: 'Emerald' },
+  { id: 'rose',    color: '#ef4444', label: 'Rose'    },
+];
+
+type Bridge = {
+  openProviderSignIn?: (p: string) => Promise<{ ok: boolean }>;
+  testProviderKey?: (p: string, k: string) => Promise<{ ok: boolean; error?: string }>;
+  openUrl?: (u: string) => void;
+};
+function bridge(): Bridge {
+  return (window as unknown as { nowaikit?: Bridge }).nowaikit ?? {};
+}
+
+export default function Settings({ settings, onSave, activeInstance, onNavigate }: Props): React.ReactElement {
+  const { mode, accent, setMode, setAccent } = useTheme();
+
+  const [draft,      setDraft]      = useState<AppSettings>(settings);
+  const [tab,        setTab]        = useState<AiProviderId>('anthropic');
+  const [showKey,    setShowKey]    = useState(false);
+  const [saved,      setSaved]      = useState(false);
+  const [busy,       setBusy]       = useState(false);
+
+  // Sign-in flow state
+  const [signInMode,   setSignInMode]   = useState<'none' | 'steps' | 'paste'>('none');
+  const [signingIn,    setSigningIn]    = useState(false);
+
+  // Test key state
+  const [testing,      setTesting]      = useState(false);
+  const [testResult,   setTestResult]   = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Reset test result when key or tab changes
+  function resetTest() { setTestResult(null); }
+
+  function setProviderKey(pid: AiProviderId, key: string) {
+    resetTest();
+    setDraft(d => ({ ...d, providers: { ...d.providers, [pid]: { ...d.providers[pid], apiKey: key } } }));
+  }
+
+  async function save() {
+    setBusy(true);
+    await onSave(draft);
+    setBusy(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  async function handleSignIn() {
+    setSignInMode('steps');
+    setSigningIn(true);
+    try {
+      const b = bridge();
+      if (b.openProviderSignIn) {
+        // Opens provider portal in the system browser
+        await b.openProviderSignIn(tab);
+      } else {
+        b.openUrl?.(currentProvider.portalUrl);
+      }
+    } finally {
+      setSigningIn(false);
+      // Show paste-key step while user copies key from browser
+      setSignInMode('paste');
+    }
+  }
+
+  async function testKey() {
+    const key = draft.providers[tab]?.apiKey ?? '';
+    if (!key) { setTestResult({ ok: false, msg: 'Enter a key first' }); return; }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const b = bridge();
+      if (b.testProviderKey) {
+        const r = await b.testProviderKey(tab, key);
+        setTestResult(r.ok ? { ok: true, msg: 'Key verified ✓' } : { ok: false, msg: r.error ?? 'Invalid key' });
+      } else {
+        setTestResult({ ok: true, msg: 'Test not available in web mode' });
+      }
+    } catch {
+      setTestResult({ ok: false, msg: 'Connection error' });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const currentProvider = PROVIDERS.find(p => p.id === tab) ?? PROVIDERS[0];
+
+  const section = (title: string, children: React.ReactNode) => (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ fontSize:'0.7rem', fontWeight:700, color:'var(--dim)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:12 }}>{title}</div>
+      <div className="card" style={{ padding:'20px 24px' }}>{children}</div>
+    </div>
+  );
+
+  const row = (label: string, hint: string, control: React.ReactNode) => (
+    <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:24, padding:'12px 0', borderBottom:'1px solid var(--border)' }}>
+      <div style={{ minWidth:0 }}>
+        <div style={{ fontWeight:500, marginBottom:2 }}>{label}</div>
+        <div style={{ fontSize:'0.8rem', color:'var(--text2)' }}>{hint}</div>
+      </div>
+      <div style={{ flexShrink:0 }}>{control}</div>
+    </div>
+  );
 
   return (
-    <div className="fade-in">
+    <div style={{ maxWidth: 680 }}>
       <div className="page-header">
-        <h1 className="page-title">Settings</h1>
-        <p className="page-subtitle">Application configuration and system information</p>
+        <h2 className="page-title">Settings</h2>
+        <button className="btn-primary" onClick={save} disabled={busy} style={{ opacity: busy ? 0.6 : 1 }}>
+          {saved ? '✓ Saved' : busy ? 'Saving…' : 'Save Changes'}
+        </button>
       </div>
 
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">System Information</span>
+      {/* ── ServiceNow Connection ─────────────────────────────────────────── */}
+      {section('ServiceNow Connection', <>
+        {activeInstance ? (
+          <>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px 24px', marginBottom:16 }}>
+              {[
+                ['Instance',    activeInstance.name],
+                ['URL',         activeInstance.url],
+                ['Auth Method', activeInstance.authMethod],
+                ['Tool Package',activeInstance.toolPackage.replace(/_/g,' ')],
+                ['Write Access',activeInstance.writeEnabled ? 'Enabled' : 'Read-only'],
+              ].map(([label, value]) => (
+                <div key={label} style={{ padding:'8px 0', borderBottom:'1px solid var(--border)' }}>
+                  <div style={{ fontSize:'0.72rem', color:'var(--dim)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:3 }}>{label}</div>
+                  <div style={{ fontSize:'0.88rem', fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              <button className="btn-primary" onClick={() => onNavigate?.('instances')} style={{ fontSize:'0.82rem', padding:'7px 14px' }}>
+                ⬡ Manage Instances
+              </button>
+              <button className="btn-ghost" onClick={() => onNavigate?.('instances')} style={{ fontSize:'0.82rem', padding:'7px 14px' }}>
+                + Add Instance
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={{ textAlign:'center', padding:'20px 0', color:'var(--dim)' }}>
+            <div style={{ fontSize:'0.88rem', marginBottom:12 }}>No ServiceNow instance configured yet.</div>
+            <button className="btn-primary" onClick={() => onNavigate?.('instances')} style={{ fontSize:'0.85rem' }}>
+              Configure ServiceNow Instance →
+            </button>
+          </div>
+        )}
+      </>)}
+
+      {/* ── AI Providers ─────────────────────────────────────────────────── */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+          <div style={{ fontSize:'0.7rem', fontWeight:700, color:'var(--dim)', textTransform:'uppercase', letterSpacing:'0.08em' }}>AI Providers</div>
+          <div style={{ fontSize:'0.72rem', color:'var(--dim)' }}>
+            {PROVIDERS.filter(p => draft.providers[p.id]?.apiKey).length}/{PROVIDERS.length} connected
+          </div>
         </div>
-        <table className="data-table">
-          <tbody>
-            <tr><td style={{ fontWeight: 600, width: 200 }}>App Version</td><td>{version?.app || '—'}</td></tr>
-            <tr><td style={{ fontWeight: 600 }}>Electron</td><td>{version?.electron || '—'}</td></tr>
-            <tr><td style={{ fontWeight: 600 }}>Node.js</td><td>{version?.node || '—'}</td></tr>
-            <tr><td style={{ fontWeight: 600 }}>Platform</td><td>{navigator.platform}</td></tr>
-            <tr><td style={{ fontWeight: 600 }}>MCP Server Path</td><td><span className="code">{serverPath}</span></td></tr>
-          </tbody>
-        </table>
+
+        {/* Provider card grid — each card is self-contained and expands on click */}
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {PROVIDERS.map(p => {
+            const hasKey = Boolean(draft.providers[p.id]?.apiKey);
+            const isExpanded = tab === p.id;
+            const providerModels = MODELS_BY_PROVIDER[p.id];
+            const prov = draft.providers[p.id];
+
+            return (
+              <div key={p.id} className="card" style={{
+                padding:0, overflow:'hidden',
+                borderColor: isExpanded ? 'var(--accent)' : hasKey ? 'var(--green-dim, var(--border))' : 'var(--border)',
+                transition:'border-color .2s',
+              }}>
+                {/* Collapsed header — always visible */}
+                <button onClick={() => {
+                  if (isExpanded) { setTab('' as AiProviderId); } else {
+                    setTab(p.id);
+                    setDraft(d => {
+                      const updated = { ...d, activeProvider: p.id };
+                      if (!MODELS_BY_PROVIDER[p.id].find(m => m.value === d.model)) updated.model = MODELS_BY_PROVIDER[p.id][0].value;
+                      return updated;
+                    });
+                    setSignInMode('none'); resetTest(); setShowKey(false);
+                  }
+                }} style={{
+                  width:'100%', display:'flex', alignItems:'center', gap:14,
+                  padding:'14px 20px', background:'transparent', border:'none',
+                  cursor:'pointer', textAlign:'left', transition:'background .15s',
+                }}>
+                  {/* Icon */}
+                  <span style={{ width:28, textAlign:'center', flexShrink:0, opacity: hasKey ? 1 : 0.5, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {React.createElement(PROVIDER_ICONS[p.id] ?? (() => null), { size: 20 })}
+                  </span>
+
+                  {/* Name + status */}
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontWeight:600, fontSize:'0.9rem', color:'var(--text)' }}>{p.label}</div>
+                    <div style={{ fontSize:'0.75rem', color:'var(--text2)', marginTop:1 }}>
+                      {hasKey
+                        ? `Connected · ${providerModels.find(m => m.value === (draft.activeProvider === p.id ? draft.model : providerModels[0].value))?.label ?? providerModels[0].label}`
+                        : 'Not configured'}
+                    </div>
+                  </div>
+
+                  {/* Status badge */}
+                  {hasKey ? (
+                    <span style={{
+                      display:'inline-flex', alignItems:'center', gap:5,
+                      padding:'3px 10px', borderRadius:12, fontSize:'0.72rem', fontWeight:500,
+                      background:'rgba(34,197,94,0.12)', color:'var(--green)',
+                    }}>
+                      <span style={{ width:6, height:6, borderRadius:'50%', background:'var(--green)' }} />
+                      Active
+                    </span>
+                  ) : (
+                    <span style={{
+                      padding:'3px 10px', borderRadius:12, fontSize:'0.72rem', fontWeight:500,
+                      background:'var(--surface2)', color:'var(--dim)',
+                    }}>
+                      Setup needed
+                    </span>
+                  )}
+
+                  {/* Chevron */}
+                  <span style={{ fontSize:'0.7rem', color:'var(--dim)', transition:'transform .2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
+                </button>
+
+                {/* Expanded panel — only shown when this provider is selected */}
+                {isExpanded && (
+                  <div style={{ padding:'0 20px 20px', borderTop:'1px solid var(--border)' }}>
+
+                    {/* Subscription note */}
+                    <div style={{ fontSize:'0.8rem', color:'var(--text2)', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'10px 14px', margin:'16px 0', lineHeight:1.6 }}>
+                      {currentProvider.subscriptionNote}
+                    </div>
+
+                    {/* ── Sign-In flow: steps ──────────────────────────────── */}
+                    {signInMode === 'steps' && (
+                      <div>
+                        <div style={{ fontWeight:600, marginBottom:14, fontSize:'0.9rem' }}>
+                          {signingIn ? `Opening ${currentProvider.portalLabel}…` : `Sign in to ${currentProvider.label}`}
+                        </div>
+                        <ol style={{ margin:0, padding:'0 0 0 20px', color:'var(--text2)', fontSize:'0.85rem', lineHeight:2 }}>
+                          {currentProvider.signInSteps.map((step, i) => (
+                            <li key={i} style={{ color: i === 0 && signingIn ? 'var(--accent)' : 'var(--text2)' }}>{step}</li>
+                          ))}
+                        </ol>
+                        {signingIn && (
+                          <div style={{ marginTop:16, display:'flex', alignItems:'center', gap:10, color:'var(--dim)', fontSize:'0.82rem' }}>
+                            <span className="spinner" style={{ width:14, height:14, borderWidth:2 }} />
+                            Portal open — sign in and copy your API key, then close the window
+                          </div>
+                        )}
+                        {!signingIn && (
+                          <button className="btn-ghost" onClick={() => setSignInMode('none')} style={{ marginTop:14, fontSize:'0.82rem', padding:'6px 14px' }}>
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Sign-In flow: paste step ─────────────────────────── */}
+                    {signInMode === 'paste' && (
+                      <div>
+                        <div style={{ fontWeight:600, marginBottom:8 }}>Paste your API key</div>
+                        <div style={{ fontSize:'0.82rem', color:'var(--text2)', marginBottom:12 }}>
+                          Copy the key from {currentProvider.portalLabel} and paste it below.
+                        </div>
+                        <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+                          <input
+                            autoFocus
+                            className="input"
+                            type={showKey ? 'text' : 'password'}
+                            value={prov.apiKey}
+                            onChange={e => setProviderKey(tab, e.target.value)}
+                            placeholder={currentProvider.keyPlaceholder}
+                            style={{ fontFamily:'monospace', fontSize:'0.85rem', flex:1 }}
+                          />
+                          <button className="btn-ghost" onClick={() => setShowKey(s => !s)} style={{ flexShrink:0, padding:'8px 14px' }}>
+                            {showKey ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                        <div style={{ display:'flex', gap:8 }}>
+                          <button className="btn-primary" onClick={async () => { await testKey(); }} disabled={testing || !prov.apiKey} style={{ fontSize:'0.82rem', padding:'8px 16px' }}>
+                            {testing ? 'Verifying…' : 'Verify Key'}
+                          </button>
+                          <button className="btn-ghost" onClick={() => { setSignInMode('none'); }} style={{ fontSize:'0.82rem', padding:'8px 16px' }}>
+                            Done
+                          </button>
+                        </div>
+                        {testResult && (
+                          <div style={{ marginTop:10, fontSize:'0.8rem', color: testResult.ok ? 'var(--green)' : 'var(--red)' }}>
+                            {testResult.ok ? '✓ ' : '✗ '}{testResult.msg}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Default state: sign-in + key + model picker ──────── */}
+                    {signInMode === 'none' && (
+                      <div>
+                        {/* Sign In CTA */}
+                        <button
+                          className="btn-primary"
+                          onClick={handleSignIn}
+                          style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16, fontSize:'0.85rem' }}
+                        >
+                          {currentProvider.icon} Sign in to {currentProvider.label.split('(')[0].trim()}
+                          <span style={{ opacity:0.7, fontSize:'0.72rem' }}>→ opens portal</span>
+                        </button>
+
+                        {/* Divider */}
+                        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
+                          <div style={{ flex:1, height:1, background:'var(--border)' }} />
+                          <span style={{ fontSize:'0.7rem', color:'var(--dim)', textTransform:'uppercase', letterSpacing:'0.06em' }}>or paste API key directly</span>
+                          <div style={{ flex:1, height:1, background:'var(--border)' }} />
+                        </div>
+
+                        {/* API key input */}
+                        <div style={{ marginBottom:6, fontWeight:500, fontSize:'0.85rem' }}>{currentProvider.keyLabel}</div>
+                        <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+                          <input
+                            className="input"
+                            type={showKey ? 'text' : 'password'}
+                            value={prov.apiKey}
+                            onChange={e => setProviderKey(tab, e.target.value)}
+                            placeholder={currentProvider.keyPlaceholder}
+                            style={{ fontFamily:'monospace', fontSize:'0.85rem', flex:1 }}
+                          />
+                          <button className="btn-ghost" onClick={() => setShowKey(s => !s)} style={{ flexShrink:0, padding:'8px 14px' }}>
+                            {showKey ? 'Hide' : 'Show'}
+                          </button>
+                          <button
+                            className="btn-ghost"
+                            onClick={testKey}
+                            disabled={testing || !prov.apiKey}
+                            style={{ flexShrink:0, padding:'8px 14px', opacity: (!prov.apiKey || testing) ? 0.5 : 1 }}
+                          >
+                            {testing ? 'Testing…' : 'Test'}
+                          </button>
+                        </div>
+
+                        {/* Key status */}
+                        {testResult ? (
+                          <div style={{ fontSize:'0.78rem', color: testResult.ok ? 'var(--green)' : 'var(--red)', marginBottom:16 }}>
+                            {testResult.ok ? '✓ ' : '✗ '}{testResult.msg}
+                          </div>
+                        ) : prov.apiKey ? (
+                          <div style={{ fontSize:'0.78rem', color:'var(--green)', marginBottom:16 }}>✓ Key configured — click Test to verify</div>
+                        ) : (
+                          <div style={{ fontSize:'0.78rem', color:'var(--dim)', marginBottom:16 }}>No key set — this provider is unavailable</div>
+                        )}
+
+                        {/* ── Inline model picker ─────────────────────────── */}
+                        <div style={{ borderTop:'1px solid var(--border)', paddingTop:16 }}>
+                          <div style={{ fontWeight:500, marginBottom:10, fontSize:'0.85rem' }}>Default Model</div>
+                          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
+                            {providerModels.map(m => {
+                              const isSelected = draft.model === m.value;
+                              return (
+                                <label key={m.value} style={{
+                                  display:'flex', alignItems:'center', gap:10, padding:'8px 12px',
+                                  borderRadius:6, cursor:'pointer', transition:'all .15s',
+                                  background: isSelected ? 'var(--accent-bg, rgba(79,142,247,0.12))' : 'var(--surface2)',
+                                  border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}`,
+                                }}>
+                                  <input type="radio" name="model" checked={isSelected} onChange={() => setDraft(d => ({ ...d, model: m.value }))}
+                                    style={{ accentColor:'var(--accent)', width:14, height:14, flexShrink:0 }} />
+                                  <div style={{ minWidth:0 }}>
+                                    <div style={{ fontWeight:500, fontSize:'0.82rem' }}>{m.label}</div>
+                                    <div style={{ fontSize:'0.72rem', color:'var(--text2)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.desc}</div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">Links</span>
+      {/* ── Appearance ──────────────────────────────────────────────────────── */}
+      {section('Appearance', <>
+        {row('Theme', 'Switch between dark and light mode', (
+          <div style={{ display:'flex', gap:4 }}>
+            {(['dark','light'] as ThemeMode[]).map(m => (
+              <button key={m} onClick={() => setMode(m)} style={{
+                padding:'7px 14px', borderRadius:6, fontSize:'0.82rem', fontWeight:500,
+                background: mode === m ? 'var(--accent)' : 'var(--surface3)',
+                color: mode === m ? '#fff' : 'var(--text2)', border:'none', cursor:'pointer',
+              }}>
+                {m === 'dark' ? '🌙 Dark' : '☀️ Light'}
+              </button>
+            ))}
+          </div>
+        ))}
+        <div style={{ padding:'12px 0' }}>
+          <div style={{ fontWeight:500, marginBottom:10 }}>Accent Color</div>
+          <div style={{ display:'flex', gap:10 }}>
+            {ACCENTS.map(a => (
+              <button key={a.id} onClick={() => setAccent(a.id)} title={a.label} style={{
+                width:30, height:30, borderRadius:'50%', background:a.color, border:'none',
+                boxShadow: accent === a.id ? `0 0 0 3px var(--bg), 0 0 0 5px ${a.color}` : 'none',
+                transition:'box-shadow .15s', cursor:'pointer',
+              }} />
+            ))}
+          </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={() => api.openExternal('https://nowaitkit.com/docs')}>
-            Documentation
-          </button>
-          <button className="btn btn-secondary" onClick={() => api.openExternal('https://github.com/aartiq/nowaikit')}>
-            GitHub Repository
-          </button>
-          <button className="btn btn-secondary" onClick={() => api.openExternal('https://github.com/aartiq/nowaikit/issues')}>
-            Report an Issue
-          </button>
-          <button className="btn btn-secondary" onClick={() => api.openExternal('https://nowaitkit.com')}>
-            Website
-          </button>
+      </>)}
+
+      {/* ── Support ───────────────────────────────────────────────────────────── */}
+      {section('Support', <>
+        <div style={{ fontSize:'0.85rem', color:'var(--text2)', lineHeight:1.7 }}>
+          <div>Need help or want to report a bug?</div>
+          <div style={{ marginTop:8, display:'flex', flexDirection:'column', gap:6 }}>
+            <div>
+              <span style={{ color:'var(--dim)', fontSize:'0.78rem', marginRight:8 }}>Email</span>
+              <button
+                onClick={() => bridge().openUrl?.('mailto:support@nowaikit.com')}
+                style={{ background:'none', border:'none', color:'var(--accent)', cursor:'pointer', padding:0, fontSize:'0.85rem' }}
+              >support@nowaikit.com</button>
+            </div>
+            <div>
+              <span style={{ color:'var(--dim)', fontSize:'0.78rem', marginRight:8 }}>Issues</span>
+              <button
+                onClick={() => bridge().openUrl?.('https://github.com/aartiq/nowaikit/issues')}
+                style={{ background:'none', border:'none', color:'var(--accent)', cursor:'pointer', padding:0, fontSize:'0.85rem' }}
+              >GitHub Issues</button>
+            </div>
+          </div>
         </div>
-      </div>
+      </>)}
+
+      {/* ── About ────────────────────────────────────────────────────────────── */}
+      {section('About', <>
+        <div style={{ fontSize:'0.85rem', color:'var(--text2)', lineHeight:1.7 }}>
+          <div><strong>nowaikit</strong> — Open-source ServiceNow MCP toolkit</div>
+          <div>Config: <code style={{ fontSize:'0.8rem' }}>~/.config/nowaikit/</code></div>
+          <div style={{ marginTop:8 }}>
+            <button
+              onClick={() => bridge().openUrl?.('https://github.com/aartiq/nowaikit')}
+              style={{ background:'none', border:'none', color:'var(--accent)', cursor:'pointer', padding:0, fontSize:'0.85rem' }}
+            >GitHub</button>
+            {' · '}
+            <button
+              onClick={() => bridge().openUrl?.('https://nowaitkit.com')}
+              style={{ background:'none', border:'none', color:'var(--accent)', cursor:'pointer', padding:0, fontSize:'0.85rem' }}
+            >Website</button>
+          </div>
+          <div style={{ marginTop:12, fontSize:'0.72rem', color:'var(--dim)', lineHeight:1.6 }}>
+            This software is provided "as is" under the{' '}
+            <button
+              onClick={() => bridge().openUrl?.('https://github.com/aartiq/nowaikit/blob/main/LICENSE')}
+              style={{ background:'none', border:'none', color:'var(--dim)', cursor:'pointer', padding:0, fontSize:'0.72rem', textDecoration:'underline' }}
+            >MIT License</button>
+            , without warranty of any kind. Use at your own risk.{' '}
+            <button
+              onClick={() => bridge().openUrl?.('https://github.com/aartiq/nowaikit/blob/main/TERMS.md')}
+              style={{ background:'none', border:'none', color:'var(--dim)', cursor:'pointer', padding:0, fontSize:'0.72rem', textDecoration:'underline' }}
+            >Terms &amp; Conditions</button>
+          </div>
+        </div>
+      </>)}
     </div>
   );
 }

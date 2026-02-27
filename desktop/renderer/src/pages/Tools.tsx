@@ -1,0 +1,208 @@
+import React, { useEffect, useState } from 'react';
+
+interface ToolDef {
+  name: string;
+  description: string;
+  inputSchema?: {
+    properties?: Record<string, { type: string; description?: string; enum?: string[] }>;
+    required?: string[];
+  };
+}
+
+interface Props {
+  activeToolPackage: string;
+  serverOnline: boolean;
+  serverUrl: string;
+  onRestart?: () => void;
+}
+
+const MODULES = [
+  { id: 'all',       label: 'All' },
+  { id: 'incident',  label: 'Incidents' },
+  { id: 'problem',   label: 'Problems' },
+  { id: 'change',    label: 'Change' },
+  { id: 'task',      label: 'Tasks' },
+  { id: 'cmdb',      label: 'CMDB' },
+  { id: 'user',      label: 'Users' },
+  { id: 'knowledge', label: 'Knowledge' },
+  { id: 'catalog',   label: 'Catalog' },
+  { id: 'script',    label: 'Scripts' },
+  { id: 'event',     label: 'Events' },
+];
+
+function toolModule(name: string): string {
+  const n = name.toLowerCase();
+  for (const m of MODULES.slice(1)) { if (n.includes(m.id)) return m.id; }
+  return 'other';
+}
+
+function RunDrawer({ tool, onClose }: { tool: ToolDef; serverUrl: string; onClose: () => void }) {
+  const props    = tool.inputSchema?.properties ?? {};
+  const required = tool.inputSchema?.required ?? [];
+  const [params,  setParams]  = useState<Record<string, string>>({});
+  const [result,  setResult]  = useState('');
+  const [running, setRunning] = useState(false);
+  const [error,   setError]   = useState('');
+
+  async function run() {
+    setRunning(true); setResult(''); setError('');
+    const bridge = (window as unknown as { nowaikit?: { callTool: (t: string, p: Record<string, unknown>) => Promise<unknown> } }).nowaikit;
+    if (!bridge) { setError('Bridge unavailable'); setRunning(false); return; }
+    try {
+      const coerced: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(params)) {
+        if (!v && !required.includes(k)) continue;
+        const t = props[k]?.type;
+        if (t === 'number' || t === 'integer') coerced[k] = Number(v);
+        else if (t === 'boolean') coerced[k] = v === 'true';
+        else coerced[k] = v;
+      }
+      const res = await bridge.callTool(tool.name, coerced);
+      setResult(typeof res === 'string' ? res : JSON.stringify(res, null, 2));
+    } catch (err) { setError(err instanceof Error ? err.message : 'Error'); }
+    setRunning(false);
+  }
+
+  return (
+    <div style={{ position:'fixed', top:0, right:0, bottom:0, width:420, background:'var(--surface)', borderLeft:'1px solid var(--border2)', boxShadow:'var(--shadow)', zIndex:100, display:'flex', flexDirection:'column' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 20px', borderBottom:'1px solid var(--border)', flexShrink:0 }}>
+        <code style={{ color:'var(--accent)', fontWeight:700, fontSize:'0.95rem' }}>{tool.name}</code>
+        <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--dim)', fontSize:'1.2rem', padding:4 }}>✕</button>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'16px 20px' }}>
+        {tool.description && <p style={{ fontSize:'0.85rem', color:'var(--text2)', marginBottom:20, lineHeight:1.6 }}>{tool.description}</p>}
+        {Object.entries(props).map(([k, schema]) => (
+          <div key={k} style={{ marginBottom:14 }}>
+            <label style={{ display:'block', fontSize:'0.78rem', color:'var(--dim)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:5 }}>
+              {k}{required.includes(k) && <span style={{ color:'var(--red)', marginLeft:3 }}>*</span>}
+            </label>
+            {schema.description && <div style={{ fontSize:'0.76rem', color:'var(--text2)', marginBottom:5 }}>{schema.description}</div>}
+            {schema.enum ? (
+              <select value={params[k] ?? ''} onChange={e => setParams(p => ({ ...p, [k]: e.target.value }))}
+                style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border2)', borderRadius:6, color:'var(--text)', padding:'8px 10px', fontSize:'0.85rem' }}>
+                <option value="">— select —</option>
+                {schema.enum.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            ) : (
+              <input className="input" type={schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text'}
+                value={params[k] ?? ''} onChange={e => setParams(p => ({ ...p, [k]: e.target.value }))}
+                placeholder={schema.type === 'boolean' ? 'true / false' : schema.type ?? ''} />
+            )}
+          </div>
+        ))}
+        {Object.keys(props).length === 0 && <div style={{ color:'var(--dim)', fontSize:'0.85rem' }}>No parameters required.</div>}
+      </div>
+      <div style={{ padding:'14px 20px', borderTop:'1px solid var(--border)', flexShrink:0 }}>
+        <button className="btn-primary" onClick={run} disabled={running} style={{ width:'100%', padding:10, opacity: running ? 0.6 : 1 }}>
+          {running ? 'Running…' : 'Run Tool'}
+        </button>
+        {error  && <div style={{ color:'var(--red)', fontSize:'0.8rem', marginTop:10 }}>✗ {error}</div>}
+        {result && <pre className="result-box" style={{ marginTop:12, maxHeight:260 }}>{result}</pre>}
+      </div>
+    </div>
+  );
+}
+
+export default function Tools({ activeToolPackage, serverOnline, serverUrl, onRestart }: Props): React.ReactElement {
+  const [tools,      setTools]      = useState<ToolDef[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [module,     setModule]     = useState('all');
+  const [search,     setSearch]     = useState('');
+  const [selected,   setSelected]   = useState<ToolDef | null>(null);
+  const [restarting, setRestarting] = useState(false);
+
+  useEffect(() => {
+    const bridge = (window as unknown as { nowaikit?: { tools: () => Promise<{ tools: ToolDef[] }> } }).nowaikit;
+    if (!bridge) { setLoading(false); return; }
+    bridge.tools().then(d => setTools(d.tools ?? [])).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const filtered = tools.filter(t => {
+    if (module !== 'all' && toolModule(t.name) !== module) return false;
+    if (search && !t.name.toLowerCase().includes(search.toLowerCase()) && !(t.description ?? '').toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 56px)' }}>
+      <div className="page-header" style={{ marginBottom:16 }}>
+        <div>
+          <h2 className="page-title">Tools</h2>
+          {!loading && <div style={{ fontSize:'0.78rem', color:'var(--dim)', marginTop:2 }}>{filtered.length} of {tools.length} tools · {activeToolPackage.replace(/_/g,' ')} package</div>}
+        </div>
+        <input className="input" placeholder="Search tools…" value={search} onChange={e => setSearch(e.target.value)} style={{ width:220 }} />
+      </div>
+
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:20 }}>
+        {MODULES.map(m => {
+          const cnt = m.id === 'all' ? tools.length : tools.filter(t => toolModule(t.name) === m.id).length;
+          if (cnt === 0 && m.id !== 'all') return null;
+          return (
+            <button key={m.id} onClick={() => setModule(m.id)} style={{
+              padding:'5px 12px', borderRadius:20, fontSize:'0.8rem', border:'1px solid',
+              borderColor: module === m.id ? 'var(--accent)' : 'var(--border2)',
+              background:  module === m.id ? 'var(--accent-bg)' : 'transparent',
+              color:       module === m.id ? 'var(--accent)' : 'var(--text2)',
+              fontWeight:  module === m.id ? 600 : 400, transition:'all .15s',
+            }}>
+              {m.label} <span style={{ opacity:.7, marginLeft:2 }}>{cnt}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {!serverOnline && !loading && (
+        <div style={{ background:'rgba(251,191,36,0.1)', border:'1px solid rgba(251,191,36,0.25)', borderRadius:8, padding:'10px 16px', marginBottom:16, fontSize:'0.85rem', color:'var(--yellow)', display:'flex', alignItems:'center', gap:10 }}>
+          <span>⚠</span>
+          <span style={{ flex:1 }}>HTTP server offline — <strong>Run</strong> will fail.</span>
+          <button
+            disabled={restarting}
+            onClick={async () => {
+              const bridge = (window as unknown as { nowaikit?: { restartServer: () => Promise<{ ok: boolean }> } }).nowaikit;
+              if (!bridge) return;
+              setRestarting(true);
+              await bridge.restartServer();
+              setRestarting(false);
+              onRestart?.();
+            }}
+            style={{
+              background:'rgba(251,191,36,0.2)', border:'1px solid rgba(251,191,36,0.4)',
+              color:'var(--yellow)', borderRadius:6, padding:'4px 12px', fontSize:'0.8rem',
+              cursor:'pointer', flexShrink:0, opacity: restarting ? 0.6 : 1,
+            }}
+          >
+            {restarting ? 'Starting…' : 'Start Server'}
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--dim)', gap:10 }}>
+          <span className="spinner" /> Loading tools…
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--dim)' }}>
+          {tools.length === 0 ? 'No tools loaded — ensure HTTP server is running' : 'No tools match the filter'}
+        </div>
+      ) : (
+        <div style={{ flex:1, overflowY:'auto', display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:10, alignContent:'start' }}>
+          {filtered.map(t => (
+            <button key={t.name} onClick={() => setSelected(selected?.name === t.name ? null : t)} style={{
+              background: selected?.name === t.name ? 'var(--accent-bg)' : 'var(--surface)',
+              border: `1px solid ${selected?.name === t.name ? 'var(--accent)' : 'var(--border)'}`,
+              borderRadius:'var(--radius)', padding:'14px 16px', textAlign:'left', cursor:'pointer', transition:'all .15s',
+            }}>
+              <div style={{ fontFamily:'monospace', fontSize:'0.82rem', color:'var(--accent)', fontWeight:600, marginBottom:5 }}>{t.name}</div>
+              <div style={{ fontSize:'0.78rem', color:'var(--text2)', lineHeight:1.4, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>
+                {t.description || 'No description'}
+              </div>
+              <div style={{ marginTop:8 }}><span className="badge-dim">{toolModule(t.name)}</span></div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selected && <RunDrawer tool={selected} serverUrl={serverUrl} onClose={() => setSelected(null)} />}
+    </div>
+  );
+}

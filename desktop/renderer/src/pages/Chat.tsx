@@ -1,0 +1,487 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import type { AppInstance, AppSettings, AiProviderId } from '../App.js';
+import { PROVIDER_ICONS } from '../components/ProviderIcons.js';
+
+// ── Message types (Anthropic format, used across all providers) ───────────────
+type CPText   = { type: 'text'; text: string };
+type CPTool   = { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> };
+type CPResult = { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
+type ContentPart = CPText | CPTool | CPResult;
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string | ContentPart[];
+}
+
+// ── Display items (flattened for rendering) ───────────────────────────────────
+type DisplayItem =
+  | { kind: 'user'; text: string }
+  | { kind: 'assistant'; parts: ContentPart[] }
+  | { kind: 'tool'; tu: CPTool; result?: CPResult };
+
+function toDisplayItems(messages: ChatMessage[]): DisplayItem[] {
+  const results = new Map<string, CPResult>();
+  for (const m of messages) {
+    if (m.role === 'user' && Array.isArray(m.content))
+      for (const c of m.content as ContentPart[])
+        if (c.type === 'tool_result') results.set(c.tool_use_id, c);
+  }
+
+  const out: DisplayItem[] = [];
+  for (const m of messages) {
+    if (m.role === 'user' && typeof m.content === 'string') {
+      out.push({ kind: 'user', text: m.content });
+    } else if (m.role === 'assistant' && Array.isArray(m.content)) {
+      for (const p of m.content as ContentPart[]) {
+        if (p.type === 'text') out.push({ kind: 'assistant', parts: [p] });
+        if (p.type === 'tool_use') out.push({ kind: 'tool', tu: p as CPTool, result: results.get((p as CPTool).id) });
+      }
+    }
+  }
+  return out;
+}
+
+// ── Basic markdown → React ────────────────────────────────────────────────────
+function renderMd(text: string): React.ReactNode[] {
+  const codeBlock = /```[\w]*\n?([\s\S]*?)```/g;
+  const out: React.ReactNode[] = [];
+  let last = 0, key = 0;
+  let m: RegExpExecArray | null;
+  while ((m = codeBlock.exec(text)) !== null) {
+    if (m.index > last) out.push(renderInline(text.slice(last, m.index), key++));
+    out.push(<pre key={key++} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'10px 14px', overflowX:'auto', fontSize:'0.8rem', margin:'8px 0' }}><code>{m[1].trim()}</code></pre>);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(renderInline(text.slice(last), key++));
+  return out;
+}
+
+function renderInline(text: string, key: number): React.ReactNode {
+  const parts = text.split(/(`[^`\n]+`|\*\*[^*]+\*\*)/g);
+  return (
+    <span key={key} style={{ whiteSpace:'pre-wrap' }}>
+      {parts.map((p, i) => {
+        if (p.startsWith('`') && p.endsWith('`'))   return <code key={i} style={{ background:'var(--surface3)', padding:'1px 5px', borderRadius:4, fontSize:'0.82em' }}>{p.slice(1,-1)}</code>;
+        if (p.startsWith('**') && p.endsWith('**')) return <strong key={i}>{p.slice(2,-2)}</strong>;
+        return p;
+      })}
+    </span>
+  );
+}
+
+// ── Collapsible tool call card ────────────────────────────────────────────────
+function ToolCard({ tu, result }: { tu: CPTool; result?: CPResult }) {
+  const [open, setOpen] = useState(false);
+  const ok = result && !result.is_error;
+  return (
+    <div style={{ background:'#1a1f35', border:'1px solid #2e3a5f', borderRadius:8, fontSize:'0.78rem', overflow:'hidden', fontFamily:'monospace' }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        width:'100%', display:'flex', alignItems:'center', gap:8, padding:'8px 10px',
+        background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer', textAlign:'left',
+      }}>
+        <span style={{ fontSize:'0.7rem', opacity:.7 }}>{open ? '▼' : '▶'}</span>
+        <span style={{ fontWeight:600 }}>{tu.name}</span>
+        {result && <span className={ok ? 'badge-green' : 'badge-red'} style={{ marginLeft:'auto' }}>{ok ? 'ok' : 'error'}</span>}
+        {!result && <span className="badge-dim" style={{ marginLeft:'auto' }}>running…</span>}
+      </button>
+      {open && (
+        <div style={{ padding:'8px 10px', borderTop:'1px solid #2e3a5f' }}>
+          <div style={{ color:'var(--dim)', fontSize:'0.68rem', marginBottom:3, letterSpacing:'0.05em' }}>INPUT</div>
+          <pre style={{ fontSize:'0.74rem', overflowX:'auto', color:'#a5f3fc', marginBottom:result ? 8 : 0 }}>{JSON.stringify(tu.input, null, 2)}</pre>
+          {result && <>
+            <div style={{ color:'var(--dim)', fontSize:'0.68rem', marginBottom:3, letterSpacing:'0.05em' }}>{result.is_error ? 'ERROR' : 'OUTPUT'}</div>
+            <pre style={{ fontSize:'0.74rem', overflowX:'auto', color: result.is_error ? 'var(--red)' : '#a5f3fc' }}>{result.content}</pre>
+          </>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Provider / model config ───────────────────────────────────────────────────
+const PROVIDER_META: { id: AiProviderId; label: string }[] = [
+  { id: 'anthropic',  label: 'Claude' },
+  { id: 'openai',     label: 'ChatGPT' },
+  { id: 'google',     label: 'Gemini' },
+  { id: 'groq',       label: 'Groq' },
+  { id: 'openrouter', label: 'OpenRouter' },
+];
+
+const MODELS_BY_PROVIDER: Record<AiProviderId, { value: string; label: string }[]> = {
+  anthropic: [
+    { value: 'claude-opus-4-6',           label: 'Claude Opus 4.6' },
+    { value: 'claude-sonnet-4-6',         label: 'Claude Sonnet 4.6' },
+    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+  ],
+  openai: [
+    { value: 'gpt-5.2',         label: 'GPT-5.2' },
+    { value: 'gpt-5.2-pro',     label: 'GPT-5.2 Pro' },
+    { value: 'gpt-5.1',         label: 'GPT-5.1' },
+    { value: 'gpt-5-mini',      label: 'GPT-5 mini' },
+    { value: 'gpt-5-nano',      label: 'GPT-5 nano' },
+    { value: 'gpt-4.1',         label: 'GPT-4.1' },
+    { value: 'gpt-4.1-mini',    label: 'GPT-4.1 mini' },
+    { value: 'gpt-4o',          label: 'GPT-4o' },
+    { value: 'o3',              label: 'o3' },
+    { value: 'o4-mini',         label: 'o4 mini' },
+  ],
+  google: [
+    { value: 'gemini-3.1-pro-preview',  label: 'Gemini 3.1 Pro' },
+    { value: 'gemini-3-pro-preview',     label: 'Gemini 3 Pro' },
+    { value: 'gemini-3-flash-preview',   label: 'Gemini 3 Flash' },
+    { value: 'gemini-2.5-flash',         label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-2.5-pro',           label: 'Gemini 2.5 Pro' },
+  ],
+  groq: [
+    { value: 'meta-llama/llama-4-maverick-17b-128e-instruct', label: 'Llama 4 Maverick' },
+    { value: 'meta-llama/llama-4-scout-17b-16e-instruct',     label: 'Llama 4 Scout' },
+    { value: 'llama-3.3-70b-versatile',                       label: 'Llama 3.3 70B' },
+    { value: 'llama-3.1-8b-instant',                          label: 'Llama 3.1 8B' },
+  ],
+  openrouter: [
+    { value: 'openai/o1-pro',                                   label: 'OpenAI o1 Pro' },
+    { value: 'xai/grok-4',                                      label: 'Grok 4 (xAI)' },
+    { value: 'anthropic/claude-3.7-sonnet',                      label: 'Claude 3.7 Sonnet' },
+    { value: 'google/gemini-2.0-flash-001',                      label: 'Gemini 2.0 Flash' },
+    { value: 'deepseek/deepseek-r1:free',                        label: 'DeepSeek R1 (free)' },
+    { value: 'meta-llama/llama-4-maverick-17b-128e-instruct',    label: 'Llama 4 Maverick' },
+    { value: 'meta-llama/llama-3.3-70b-instruct',                label: 'Llama 3.3 70B' },
+    { value: 'google/gemma-2-9b-it:free',                        label: 'Gemma 2 9B (free)' },
+  ],
+};
+
+const SUGGESTIONS = [
+  'Show me my 5 most recent open incidents',
+  'List all critical change requests scheduled for this week',
+  'Find all CIs with no owner assigned',
+  'What problems have been open for more than 30 days?',
+];
+
+// ── Tool type (for slash-command picker) ──────────────────────────────────────
+interface ToolDef {
+  name: string;
+  description: string;
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+interface Props {
+  settings: AppSettings;
+  serverUrl: string;
+  instances: AppInstance[];
+}
+
+export default function Chat({ settings, serverUrl, instances }: Props): React.ReactElement {
+  const [messages,  setMessages]  = useState<ChatMessage[]>([]);
+  const [input,     setInput]     = useState('');
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState('');
+  const [provider,  setProvider]  = useState<AiProviderId>(settings.activeProvider || 'anthropic');
+  const [model,     setModel]     = useState(settings.model || 'claude-sonnet-4-6');
+
+  // Slash-command tool picker
+  const [allTools,    setAllTools]    = useState<ToolDef[]>([]);
+  const [slashOpen,   setSlashOpen]   = useState(false);
+  const [slashFilter, setSlashFilter] = useState('');
+  const [slashIndex,  setSlashIndex]  = useState(0);
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef  = useRef<HTMLTextAreaElement>(null);
+  const slashRef  = useRef<HTMLDivElement>(null);
+
+  // Sync model when provider changes (pick first model of provider)
+  useEffect(() => {
+    const models = MODELS_BY_PROVIDER[provider];
+    const firstModel = models[0].value;
+    // If current model doesn't belong to this provider, switch to first
+    if (!models.find(m => m.value === model)) setModel(firstModel);
+  }, [provider]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
+
+  // Load tool list for slash-command picker
+  useEffect(() => {
+    const bridge = (window as unknown as { nowaikit?: { tools: () => Promise<{ tools: ToolDef[] }> } }).nowaikit;
+    if (!bridge) return;
+    bridge.tools().then(d => setAllTools(d.tools ?? [])).catch(() => {});
+  }, []);
+
+  // Close slash popup on outside click
+  useEffect(() => {
+    if (!slashOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!slashRef.current?.contains(e.target as Node) && !inputRef.current?.contains(e.target as Node)) {
+        setSlashOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [slashOpen]);
+
+  const activeProvider = settings.providers[provider];
+  const hasKey   = Boolean(activeProvider?.apiKey);
+  const active   = instances.find(i => i.active);
+  const displayItems = toDisplayItems(messages);
+
+  // Slash-command filtered tool list
+  const filteredTools = slashFilter
+    ? allTools.filter(t => t.name.toLowerCase().includes(slashFilter.toLowerCase()) || t.description?.toLowerCase().includes(slashFilter.toLowerCase()))
+    : allTools;
+  const slashTools = filteredTools.slice(0, 10);
+
+  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value;
+    setInput(val);
+    // Detect slash command
+    const slashMatch = val.match(/(?:^|\s)\/([\w_]*)$/);
+    if (slashMatch) {
+      setSlashFilter(slashMatch[1]);
+      setSlashIndex(0);
+      setSlashOpen(true);
+    } else {
+      setSlashOpen(false);
+    }
+  }
+
+  function pickSlashTool(tool: ToolDef) {
+    // Replace the trailing /... with the tool name
+    const newInput = input.replace(/(?:^|\s)\/([\w_]*)$/, match => {
+      const space = match.startsWith(' ') ? ' ' : '';
+      return `${space}/${tool.name} `;
+    });
+    setInput(newInput);
+    setSlashOpen(false);
+    inputRef.current?.focus();
+  }
+
+  async function send(text?: string) {
+    const userText = (text ?? input).trim();
+    if (!userText || loading) return;
+    setInput('');
+    setError('');
+    setSlashOpen(false);
+
+    // Expand /toolname shortcuts → natural language request
+    const expandedText = userText.replace(/\/([\w_]+)/g, (_match, name) => {
+      const found = allTools.find(t => t.name === name);
+      return found ? `(use tool: ${name})` : _match;
+    });
+
+    const newMessages: ChatMessage[] = [...messages, { role: 'user', content: expandedText !== userText ? userText : userText }];
+    setMessages(newMessages);
+    setLoading(true);
+
+    const bridge = (window as unknown as { nowaikit?: { sendChat: (p: Record<string, unknown>) => Promise<{ messages?: ChatMessage[]; error?: string }> } }).nowaikit;
+    if (!bridge) { setError('Desktop bridge unavailable'); setLoading(false); return; }
+
+    const result = await bridge.sendChat({
+      messages: newMessages,
+      apiKey: activeProvider?.apiKey ?? '',
+      model,
+      serverUrl,
+      provider,
+    });
+
+    setLoading(false);
+    if (result.error) { setError(result.error); return; }
+    if (result.messages) setMessages(result.messages);
+  }
+
+  function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (slashOpen && slashTools.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(i => Math.min(i + 1, slashTools.length - 1)); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setSlashIndex(i => Math.max(i - 1, 0)); return; }
+      if (e.key === 'Tab' || (e.key === 'Enter' && slashOpen)) {
+        e.preventDefault();
+        if (slashTools[slashIndex]) pickSlashTool(slashTools[slashIndex]);
+        return;
+      }
+      if (e.key === 'Escape') { setSlashOpen(false); return; }
+    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  }
+
+  const selectStyle: React.CSSProperties = {
+    background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6,
+    color:'var(--text)', padding:'6px 10px', fontSize:'0.8rem',
+  };
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 56px)', maxWidth:900, margin:'0 auto' }}>
+
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, gap:12, flexWrap:'wrap' }}>
+        <div style={{ minWidth:0 }}>
+          <h2 className="page-title">AI Chat</h2>
+          {active && <div style={{ fontSize:'0.78rem', color:'var(--dim)', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>Instance: {active.name} · {active.url}</div>}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0, flexWrap:'wrap' }}>
+          {/* Provider selector */}
+          <div style={{ display:'flex', border:'1px solid var(--border)', borderRadius:6, overflow:'hidden' }}>
+            {PROVIDER_META.map(p => {
+              const hasProviderKey = Boolean(settings.providers[p.id]?.apiKey);
+              return (
+                <button key={p.id} onClick={() => setProvider(p.id)} style={{
+                  padding:'5px 12px', border:'none', fontSize:'0.78rem', cursor:'pointer',
+                  background: provider === p.id ? 'var(--accent)' : 'transparent',
+                  color: provider === p.id ? '#fff' : hasProviderKey ? 'var(--text2)' : 'var(--dim)',
+                  fontWeight: provider === p.id ? 600 : 400, transition:'all .15s',
+                  display:'flex', alignItems:'center', gap:5,
+                }}>
+                  {React.createElement(PROVIDER_ICONS[p.id] ?? (() => null), { size: 14, color: provider === p.id ? '#fff' : 'currentColor' })} {p.label}
+                  {hasProviderKey && provider !== p.id && <span style={{ width:5, height:5, borderRadius:'50%', background:'var(--green)' }} />}
+                </button>
+              );
+            })}
+          </div>
+          {/* Model selector */}
+          <select value={model} onChange={e => setModel(e.target.value)} style={selectStyle}>
+            {MODELS_BY_PROVIDER[provider].map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+          {messages.length > 0 && (
+            <button className="btn-ghost" onClick={() => { setMessages([]); setError(''); }} style={{ padding:'6px 14px', fontSize:'0.8rem' }}>New Chat</button>
+          )}
+        </div>
+      </div>
+
+      {/* No API key warning */}
+      {!hasKey && (
+        <div style={{ background:'rgba(251,191,36,0.1)', border:'1px solid rgba(251,191,36,0.3)', borderRadius:8, padding:'12px 16px', marginBottom:16, fontSize:'0.875rem', color:'var(--yellow)' }}>
+          No API key for <strong>{PROVIDER_META.find(p => p.id === provider)?.label}</strong>. Go to <strong>Settings → AI Providers</strong> to add your key.
+        </div>
+      )}
+
+      {/* Messages */}
+      <div style={{ flex:1, overflowY:'auto', marginBottom:16, display:'flex', flexDirection:'column', gap:4 }}>
+        {displayItems.length === 0 && (
+          <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:24, color:'var(--dim)' }}>
+            <div style={{ textAlign:'center' }}>
+              <div style={{ fontSize:'1.8rem', marginBottom:8 }}>🔗</div>
+              <div style={{ fontSize:'0.95rem', color:'var(--text2)', fontWeight:500 }}>Ask anything about your ServiceNow instance</div>
+              <div style={{ fontSize:'0.8rem', marginTop:4 }}>Type <code style={{ background:'var(--surface2)', padding:'1px 5px', borderRadius:3 }}>/</code> to browse &amp; run tools · Shift+Enter for new line</div>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:8, width:'100%', maxWidth:560 }}>
+              {SUGGESTIONS.map(s => (
+                <button key={s} onClick={() => send(s)} style={{
+                  background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8,
+                  color:'var(--text2)', padding:'10px 14px', textAlign:'left', fontSize:'0.85rem', cursor:'pointer',
+                  transition:'all .15s',
+                }}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {displayItems.map((item, i) => {
+          if (item.kind === 'user') return (
+            <div key={i} style={{ display:'flex', justifyContent:'flex-end', marginBottom:6 }}>
+              <div style={{ background:'var(--accent)', color:'#fff', borderRadius:8, padding:'10px 12px', maxWidth:'88%', fontSize:'0.85rem', lineHeight:1.5 }}>
+                {item.text}
+              </div>
+            </div>
+          );
+          if (item.kind === 'assistant') return (
+            <div key={i} style={{ display:'flex', justifyContent:'flex-start', marginBottom:6 }}>
+              <div style={{ background:'var(--surface2)', borderRadius:8, padding:'10px 12px', maxWidth:'88%', fontSize:'0.85rem', lineHeight:1.5 }}>
+                {renderMd((item.parts[0] as CPText).text)}
+              </div>
+            </div>
+          );
+          if (item.kind === 'tool') return (
+            <div key={i} style={{ maxWidth:'95%', marginBottom:4 }}>
+              <ToolCard tu={item.tu} result={item.result} />
+            </div>
+          );
+          return null;
+        })}
+
+        {loading && (
+          <div style={{ display:'flex', justifyContent:'flex-start', marginBottom:4 }}>
+            <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'3px 14px 14px 14px', padding:'12px 16px' }}>
+              <div style={{ display:'flex', gap:5, alignItems:'center' }}>
+                {[0,1,2].map(j => (
+                  <div key={j} style={{ width:7, height:7, borderRadius:'50%', background:'var(--dim)', animation:`bounce .9s ease-in-out ${j*0.2}s infinite alternate` }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div style={{ background:'rgba(248,113,113,0.1)', border:'1px solid rgba(248,113,113,0.3)', borderRadius:8, padding:'10px 14px', color:'var(--red)', fontSize:'0.85rem' }}>
+            {error}
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Slash-command tool picker */}
+      {slashOpen && slashTools.length > 0 && (
+        <div ref={slashRef} style={{
+          position:'relative', marginBottom:4,
+        }}>
+          <div style={{
+            position:'absolute', bottom:'100%', left:0, right:0,
+            background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8,
+            boxShadow:'0 8px 24px rgba(0,0,0,0.4)', zIndex:50, maxHeight:280, overflowY:'auto',
+          }}>
+            <div style={{ padding:'8px 12px 6px', fontSize:'0.7rem', color:'var(--dim)', textTransform:'uppercase', letterSpacing:'0.07em', borderBottom:'1px solid var(--border)' }}>
+              Tools — Tab or Enter to select · Esc to close
+            </div>
+            {slashTools.map((t, i) => (
+              <button key={t.name} onMouseDown={e => { e.preventDefault(); pickSlashTool(t); }} style={{
+                display:'flex', alignItems:'baseline', gap:10, width:'100%', padding:'8px 12px',
+                background: i === slashIndex ? 'var(--accent-bg)' : 'transparent',
+                border:'none', cursor:'pointer', textAlign:'left', transition:'background .1s',
+                borderBottom: i < slashTools.length - 1 ? '1px solid var(--border)' : 'none',
+              }}>
+                <code style={{ color:'var(--accent)', fontWeight:600, fontSize:'0.8rem', flexShrink:0 }}>/{t.name}</code>
+                <span style={{ fontSize:'0.75rem', color:'var(--text2)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.description}</span>
+              </button>
+            ))}
+            {allTools.length > 10 && (
+              <div style={{ padding:'6px 12px', fontSize:'0.72rem', color:'var(--dim)', borderTop:'1px solid var(--border)' }}>
+                {filteredTools.length} tools · type to filter
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Input row */}
+      <div style={{ display:'flex', gap:10, alignItems:'flex-end', paddingBottom:4 }}>
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={handleInputChange}
+          onKeyDown={handleKey}
+          placeholder="Ask anything… or type / to browse tools (Enter to send)"
+          rows={1}
+          disabled={loading || !hasKey}
+          style={{
+            flex:1, background:'var(--surface2)', border:'1px solid var(--border)',
+            borderRadius:10, color:'var(--text)', padding:'11px 14px',
+            fontSize:'0.9rem', resize:'none', outline:'none',
+            transition:'border-color .15s, box-shadow .15s', minHeight:46, maxHeight:160,
+            lineHeight:1.5,
+            ...(input ? { borderColor:'var(--accent)', boxShadow:'0 0 0 3px var(--accent-bg)' } : {}),
+          }}
+        />
+        <button
+          onClick={() => send()}
+          disabled={loading || !input.trim() || !hasKey}
+          className="btn-primary"
+          style={{ padding:'11px 20px', borderRadius:10, flexShrink:0, opacity: (loading || !input.trim() || !hasKey) ? 0.45 : 1 }}
+        >
+          {loading ? <span className="spinner" style={{ width:16, height:16, borderWidth:2 }} /> : 'Send'}
+        </button>
+      </div>
+
+      <style>{`
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+        textarea:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-bg) !important; }
+      `}</style>
+    </div>
+  );
+}
