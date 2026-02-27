@@ -1,5 +1,5 @@
 import { app, safeStorage } from 'electron';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 import type { InstanceConfig } from './index';
@@ -204,7 +204,9 @@ export class ConfigStore {
     // Encrypt settings API keys
     toSave = this.encryptSettings(toSave);
 
-    writeFileSync(this.configPath, JSON.stringify(toSave, null, 2), 'utf8');
+    // Write config with a header note about editing
+    const json = JSON.stringify(toSave, null, 2);
+    writeFileSync(this.configPath, json, 'utf8');
   }
 
   get(key: string): unknown {
@@ -252,6 +254,14 @@ export class ConfigStore {
   }
 
   // ── Audit Log ──
+
+  appendAuditLog(entry: Record<string, unknown>): void {
+    try {
+      appendFileSync(this.auditPath, JSON.stringify(entry) + '\n', 'utf8');
+    } catch {
+      // Ignore write errors
+    }
+  }
 
   getAuditLogs(limit: number): Array<Record<string, unknown>> {
     try {

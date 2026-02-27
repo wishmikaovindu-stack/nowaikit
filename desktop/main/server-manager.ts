@@ -82,24 +82,63 @@ export class ServerManager {
         windowsHide: true,
       });
 
-      this.status = {
-        running: true,
-        instance: instance.name,
-        pid: this.process.pid,
-        startedAt: new Date().toISOString(),
-      };
+      // Wait briefly to detect early crashes (e.g., missing modules, bad config)
+      const result = await new Promise<{ success: boolean; error?: string }>((resolve) => {
+        let stderrOutput = '';
+        let resolved = false;
 
-      this.process.on('exit', (code) => {
-        console.log(`MCP server exited with code ${code}`);
-        this.status = { running: false };
-        this.process = null;
+        const onError = (err: Error) => {
+          if (resolved) return;
+          resolved = true;
+          this.status = { running: false };
+          this.process = null;
+          resolve({ success: false, error: `Failed to start server: ${err.message}` });
+        };
+
+        const onExit = (code: number | null) => {
+          if (resolved) return;
+          resolved = true;
+          this.status = { running: false };
+          this.process = null;
+          const detail = stderrOutput.trim() ? `: ${stderrOutput.trim().split('\n').slice(-3).join(' | ')}` : '';
+          resolve({ success: false, error: `Server exited immediately with code ${code}${detail}` });
+        };
+
+        const onStderr = (data: Buffer) => {
+          stderrOutput += data.toString();
+          console.error(`MCP server stderr: ${data}`);
+        };
+
+        this.process!.on('error', onError);
+        this.process!.on('exit', onExit);
+        this.process!.stderr?.on('data', onStderr);
+
+        // If still running after 3 seconds, consider it started
+        setTimeout(() => {
+          if (resolved) return;
+          resolved = true;
+          // Remove early-exit handler, replace with long-term one
+          this.process!.removeListener('exit', onExit);
+          this.process!.removeListener('error', onError);
+
+          this.process!.on('exit', (code) => {
+            console.log(`MCP server exited with code ${code}`);
+            this.status = { running: false };
+            this.process = null;
+          });
+
+          this.status = {
+            running: true,
+            instance: instance.name,
+            pid: this.process!.pid,
+            startedAt: new Date().toISOString(),
+          };
+
+          resolve({ success: true });
+        }, 3000);
       });
 
-      this.process.stderr?.on('data', (data) => {
-        console.error(`MCP server stderr: ${data}`);
-      });
-
-      return { success: true };
+      return result;
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }

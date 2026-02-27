@@ -104,12 +104,32 @@ function registerIpcHandlers() {
       ? instances.find(i => i.name === instanceName)
       : instances[0];
 
-    if (!instance) return { success: false, error: 'No instance configured' };
-    return serverManager.start(instance);
+    if (!instance) return { success: false, error: 'No instance configured. Use Setup Wizard to add one.' };
+    const result = await serverManager.start(instance);
+
+    // Log to audit
+    configStore.appendAuditLog({
+      ts: new Date().toISOString(),
+      event: 'server:start',
+      instance: instance.name,
+      success: result.success,
+      error: result.error,
+    });
+
+    return result;
   });
 
   ipcMain.handle('server:stop', async () => {
+    const status = serverManager.getStatus();
     serverManager.stopAll();
+
+    configStore.appendAuditLog({
+      ts: new Date().toISOString(),
+      event: 'server:stop',
+      instance: status.instance,
+      success: true,
+    });
+
     return { success: true };
   });
 

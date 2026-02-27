@@ -638,6 +638,11 @@ export default function Settings({ settings, onSave, activeInstance, onNavigate 
           </div>
         </div>
       </>)}
+
+      {/* Encryption note */}
+      <div style={{ marginTop:28, padding:'14px 18px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, fontSize:'0.78rem', color:'var(--text2)', lineHeight:1.6 }}>
+        <strong style={{ color:'var(--text)' }}>Security note:</strong> Passwords and API keys are encrypted at rest using AES-256-GCM (keys stored in your OS keychain). You can edit <code style={{ background:'var(--surface2)', padding:'1px 5px', borderRadius:3 }}>config.json</code> directly with plaintext values — they will be automatically encrypted the next time the app saves settings.
+      </div>
     </div>
   );
 }
