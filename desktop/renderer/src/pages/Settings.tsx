@@ -154,11 +154,11 @@ const MODELS_BY_PROVIDER: Record<AiProviderId, { value: string; label: string; d
 };
 
 const ACCENTS: { id: ThemeAccent; color: string; label: string }[] = [
-  { id: 'blue',    color: '#6366f1', label: 'Indigo (default)' },
-  { id: 'violet',  color: '#8b5cf6', label: 'Violet'  },
-  { id: 'sky',     color: '#0ea5e9', label: 'Sky'     },
+  { id: 'teal',    color: '#00D4AA', label: 'Teal (default)' },
+  { id: 'navy',    color: '#0F4C81', label: 'Navy'    },
+  { id: 'blue',    color: '#3b82f6', label: 'Blue'    },
   { id: 'emerald', color: '#22c55e', label: 'Emerald' },
-  { id: 'rose',    color: '#ef4444', label: 'Rose'    },
+  { id: 'amber',   color: '#f59e0b', label: 'Amber'   },
 ];
 
 function elApi(): ElectronAPI { return unifiedApi; }

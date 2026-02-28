@@ -16,7 +16,7 @@ import Sidebar   from './components/Sidebar.js';
 
 export type Page = 'dashboard' | 'chat' | 'tools' | 'instances' | 'logs' | 'settings';
 export type ThemeMode   = 'dark' | 'light';
-export type ThemeAccent = 'blue' | 'violet' | 'sky' | 'emerald' | 'rose';
+export type ThemeAccent = 'teal' | 'navy' | 'blue' | 'emerald' | 'amber';
 export type AiProviderId = 'anthropic' | 'openai' | 'google' | 'groq' | 'openrouter';
 
 export interface ProviderSettings {
@@ -56,7 +56,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 // ── Theme context ─────────────────────────────────────────────────────────────
 interface ThemeCtx { mode: ThemeMode; accent: ThemeAccent; setMode: (m: ThemeMode) => void; setAccent: (a: ThemeAccent) => void; }
-export const ThemeContext = createContext<ThemeCtx>({ mode: 'dark', accent: 'blue', setMode: () => {}, setAccent: () => {} });
+export const ThemeContext = createContext<ThemeCtx>({ mode: 'dark', accent: 'teal', setMode: () => {}, setAccent: () => {} });
 export const useTheme = () => useContext(ThemeContext);
 
 // ── Unified API (Electron IPC or browser fallback) ──────────────────────────
@@ -73,7 +73,7 @@ function applyTheme(mode: ThemeMode, accent: ThemeAccent) {
 export default function App(): React.ReactElement {
   // ── Theme (initialised from localStorage before first render) ────────────
   const [mode,   setModeState]   = useState<ThemeMode>(  () => (localStorage.getItem('nwk-theme')  as ThemeMode)   || 'dark');
-  const [accent, setAccentState] = useState<ThemeAccent>(() => (localStorage.getItem('nwk-accent') as ThemeAccent) || 'blue');
+  const [accent, setAccentState] = useState<ThemeAccent>(() => (localStorage.getItem('nwk-accent') as ThemeAccent) || 'teal');
 
   const setMode   = useCallback((m: ThemeMode)   => { setModeState(m);   applyTheme(m,      accent); }, [accent]);
   const setAccent = useCallback((a: ThemeAccent) => { setAccentState(a); applyTheme(mode,   a); },    [mode]);

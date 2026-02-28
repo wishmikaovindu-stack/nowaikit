@@ -54,11 +54,11 @@ const NAV: { id: Page; label: string }[] = [
 ];
 
 const ACCENTS: { id: ThemeAccent; color: string }[] = [
-  { id: 'blue',    color: '#6366f1' },
-  { id: 'violet',  color: '#8b5cf6' },
-  { id: 'sky',     color: '#0ea5e9' },
+  { id: 'teal',    color: '#00D4AA' },
+  { id: 'navy',    color: '#0F4C81' },
+  { id: 'blue',    color: '#3b82f6' },
   { id: 'emerald', color: '#22c55e' },
-  { id: 'rose',    color: '#ef4444' },
+  { id: 'amber',   color: '#f59e0b' },
 ];
 
 // Inline SVG logo icon — circuit/node motif matching the brand
@@ -67,9 +67,9 @@ function LogoIcon({ size = 28 }: { size?: number }) {
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
       <defs>
         <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#0ea5e9" />
-          <stop offset="50%" stopColor="#6366f1" />
-          <stop offset="100%" stopColor="#8b5cf6" />
+          <stop offset="0%" stopColor="#00F0C0" />
+          <stop offset="50%" stopColor="#00D4AA" />
+          <stop offset="100%" stopColor="#0F4C81" />
         </linearGradient>
       </defs>
       <rect width="32" height="32" rx="8" fill="url(#logoGrad)" />
@@ -99,7 +99,7 @@ export default function Sidebar({ currentPage, onNavigate, instanceName, instanc
           <span style={{ fontWeight: 700, fontSize: '1.05rem', letterSpacing: '-0.3px' }}>
             <span style={{ color: 'var(--text)' }}>Now</span>
             <span style={{
-              background: 'linear-gradient(90deg, #0ea5e9 0%, #6366f1 60%, #8b5cf6 100%)',
+              background: 'linear-gradient(135deg, #00D4AA 0%, #0F4C81 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               fontWeight: 800,

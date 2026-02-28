@@ -11,11 +11,11 @@ interface Props {
 
 // ── Environment color/label helpers ──────────────────────────────────────────
 const ENV_COLORS: Record<string, { bg: string; fg: string }> = {
-  prod:    { bg: 'rgba(239,68,68,0.15)',  fg: '#f87171' },
-  staging: { bg: 'rgba(251,191,36,0.15)', fg: '#fbbf24' },
-  test:    { bg: 'rgba(14,165,233,0.15)', fg: '#0ea5e9' },
-  dev:     { bg: 'rgba(34,197,94,0.15)',  fg: '#22c55e' },
-  uat:     { bg: 'rgba(139,92,246,0.15)', fg: '#8b5cf6' },
+  prod:    { bg: 'rgba(232,70,106,0.15)', fg: '#F06A82' },
+  staging: { bg: 'rgba(245,158,11,0.15)', fg: '#FF8A55' },
+  test:    { bg: 'rgba(59,130,246,0.15)', fg: '#60a5fa' },
+  dev:     { bg: 'rgba(16,185,129,0.15)', fg: '#34d399' },
+  uat:     { bg: 'rgba(15,76,129,0.15)',  fg: '#3A6FA1' },
 };
 
 function envStyle(env: string): { bg: string; fg: string } {

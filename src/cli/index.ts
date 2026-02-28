@@ -16,30 +16,28 @@ import { runSetup } from './setup.js';
 import { authLogin, authLogout, authWhoami } from './auth.js';
 import { listInstances, removeInstance } from './config-store.js';
 
-// Brand colors (matches nowaitkit.com)
-const purple  = chalk.hex('#A855F7');
-const indigo  = chalk.hex('#6366F1');
-const violet  = chalk.hex('#8B5CF6');
-const sky     = chalk.hex('#0EA5E9');
-const dim     = chalk.hex('#64748B');
-const white   = chalk.hex('#F1F5F9');
-const subtle  = chalk.hex('#94A3B8');
-const success = chalk.hex('#22C55E');
-const err     = chalk.hex('#EF4444');
-const teal    = chalk.hex('#06B6D4');
+// Brand colors (matches nowaitkit.com — teal/navy palette)
+const teal    = chalk.hex('#00D4AA');
+const navy    = chalk.hex('#0F4C81');
+const bright  = chalk.hex('#33DCBB');
+const dim     = chalk.hex('#4A5670');
+const white   = chalk.hex('#F1F3F8');
+const subtle  = chalk.hex('#7E8DA8');
+const success = chalk.hex('#10B981');
+const err     = chalk.hex('#E8466A');
 
 function logoText(): string {
-  return white('Now') + indigo.bold('AI') + white('Kit');
+  return white('Now') + teal.bold('AI') + white('Kit');
 }
 
 function cliBanner(): void {
   console.log('');
-  console.log(sky('  ╔╗╔') + dim('  ') + violet('✦'));
-  console.log(indigo('  ║║║') + dim('  ') + purple('│'));
-  console.log(purple('  ╝╚╝') + dim('  ') + violet('●'));
+  console.log(bright('  ╔╗╔') + dim('  ') + teal('✦'));
+  console.log(teal('  ║║║') + dim('  ') + navy('│'));
+  console.log(navy('  ╝╚╝') + dim('  ') + teal('●'));
   console.log('');
-  console.log(`  ${logoText()}  ${dim('—')} ${subtle('The Most Comprehensive ServiceNow AI Toolkit')}`);
-  console.log(dim('  Connect ') + indigo.bold('Any AI') + dim(' to ServiceNow. Instantly.'));
+  console.log(`  ${logoText()}  ${dim('—')} ${subtle('The #1 AI App for ServiceNow')}`);
+  console.log(dim('  Connect ') + teal.bold('Any AI') + dim(' to ServiceNow. Instantly.'));
   console.log('');
 }
 
@@ -48,7 +46,7 @@ const program = new Command();
 program
   .name('nowaikit')
   .description('The Most Comprehensive ServiceNow AI Toolkit')
-  .version('2.4.5')
+  .version('2.4.6')
   .addHelpText('before', '')
   .addHelpText('beforeAll', () => {
     cliBanner();
@@ -98,7 +96,7 @@ instances
     const list = listInstances();
     if (list.length === 0) {
       console.log('');
-      console.log(dim('  No instances configured. Run ') + purple('nowaikit setup') + dim(' to add one.'));
+      console.log(dim('  No instances configured. Run ') + teal('nowaikit setup') + dim(' to add one.'));
       console.log('');
       return;
     }
@@ -110,12 +108,12 @@ instances
       const envBadge = inst.environment
         ? (inst.environment === 'production'  ? err(' PROD ')
           : inst.environment === 'development' ? success(' DEV  ')
-          : inst.environment === 'test'        ? chalk.hex('#F59E0B')(' TEST ')
-          : inst.environment === 'staging'     ? indigo(' STG  ')
+          : inst.environment === 'test'        ? chalk.hex('#FF6B35')(' TEST ')
+          : inst.environment === 'staging'     ? navy(' STG  ')
           : dim(' PDI  '))
         : '';
       console.log(
-        `  ${purple(inst.name.padEnd(16))} ${teal(inst.instanceUrl.padEnd(36))} ${dim(inst.authMethod)}${envBadge ? ' ' + envBadge : ''}`
+        `  ${teal(inst.name.padEnd(16))} ${bright(inst.instanceUrl.padEnd(36))} ${dim(inst.authMethod)}${envBadge ? ' ' + envBadge : ''}`
       );
       if (inst.group) {
         console.log(`  ${' '.repeat(16)} ${dim('group: ' + inst.group)}`);

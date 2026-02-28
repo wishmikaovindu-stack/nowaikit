@@ -21,21 +21,20 @@ import { detectClients } from './detect-clients.js';
 import { writeClientConfig } from './writers/index.js';
 import type { InstanceConfig } from './config-store.js';
 
-// ─── Brand colors (matches nowaitkit.com) ──────────────────────────────────────
-const purple  = chalk.hex('#A855F7');        // purple-500 — primary brand
-const indigo  = chalk.hex('#6366F1');        // indigo — logo center
-const violet  = chalk.hex('#8B5CF6');        // violet — logo end
-const teal    = chalk.hex('#06B6D4');        // teal-500 — gradient end
-const sky     = chalk.hex('#0EA5E9');        // sky blue — logo start
-const brand   = purple;                      // primary brand color
-const brandBg = chalk.bgHex('#6366F1').white.bold; // indigo badge bg
-const accent  = indigo;                      // accent (AI highlight)
-const success = chalk.hex('#22C55E');        // green
-const warn    = chalk.hex('#F59E0B');        // amber
-const err     = chalk.hex('#EF4444');        // red
-const dim     = chalk.hex('#64748B');        // slate-500
-const white   = chalk.hex('#F1F5F9');        // slate-100
-const subtle  = chalk.hex('#94A3B8');        // slate-400
+// ─── Brand colors (matches nowaitkit.com — teal/navy palette) ───────────────
+const teal    = chalk.hex('#00D4AA');        // teal-500 — primary brand
+const navy    = chalk.hex('#0F4C81');        // deep navy — secondary brand
+const bright  = chalk.hex('#33DCBB');        // bright teal — hover/highlight
+const mint    = chalk.hex('#80E8D0');        // mint — code/light accent
+const brand   = teal;                        // primary brand color
+const brandBg = chalk.bgHex('#00D4AA').hex('#050810').bold; // teal badge bg
+const accent  = teal;                        // accent (AI highlight)
+const success = chalk.hex('#10B981');        // emerald-500
+const warn    = chalk.hex('#FF6B35');        // amber/orange
+const err     = chalk.hex('#E8466A');        // pink-500
+const dim     = chalk.hex('#4A5670');        // muted text
+const white   = chalk.hex('#F1F3F8');        // text-primary
+const subtle  = chalk.hex('#7E8DA8');        // text-secondary
 
 const TOTAL_STEPS = 7;
 
@@ -78,9 +77,9 @@ function progressBar(current: number, total: number): string {
   const width = 20;
   const filled = Math.round((current / total) * width);
   const empty = width - filled;
-  // Gradient blocks: sky → indigo → purple
-  const colors = [sky, sky, teal, teal, indigo, indigo, indigo, violet, violet, purple,
-                  purple, purple, violet, violet, indigo, indigo, teal, teal, sky, sky];
+  // Gradient blocks: mint → bright → teal → navy
+  const colors = [mint, mint, bright, bright, teal, teal, teal, teal, navy, navy,
+                  navy, navy, teal, teal, teal, teal, bright, bright, mint, mint];
   let bar = '';
   for (let i = 0; i < filled; i++) bar += colors[i]('█');
   bar += dim('░'.repeat(empty));
@@ -90,19 +89,19 @@ function progressBar(current: number, total: number): string {
 
 // ─── Logo + Banner ────────────────────────────────────────────────────────────
 function logoText(): string {
-  return white('Now') + indigo.bold('AI') + white('Kit');
+  return white('Now') + teal.bold('AI') + white('Kit');
 }
 
 function banner(): void {
   console.log('');
-  // N + sparkle logo (matches website SVG)
-  console.log(sky('      ╔╗╔') + dim('  ') + violet('✦'));
-  console.log(indigo('      ║║║') + dim('  ') + purple('│'));
-  console.log(purple('      ╝╚╝') + dim('  ') + violet('●'));
+  // N + sparkle logo (matches website SVG — teal/navy gradient)
+  console.log(bright('      ╔╗╔') + dim('  ') + teal('✦'));
+  console.log(teal('      ║║║') + dim('  ') + navy('│'));
+  console.log(navy('      ╝╚╝') + dim('  ') + teal('●'));
   console.log('');
   console.log(`      ${logoText()}  ${dim('—')} ${subtle('Setup Wizard')}`);
   console.log('');
-  console.log(dim('      Connect ') + indigo.bold('Any AI') + dim(' to ServiceNow. Instantly.'));
+  console.log(dim('      Connect ') + teal.bold('Any AI') + dim(' to ServiceNow. Instantly.'));
   console.log(dim('      400+ tools  ·  All modules  ·  Any AI client'));
   console.log('');
   divider();
@@ -539,9 +538,9 @@ function printSummary(instance: InstanceConfig): void {
   divider();
   console.log('');
 
-  console.log(sky('      ╔╗╔') + dim('  ') + violet('✦'));
-  console.log(indigo('      ║║║') + dim('  ') + purple('│'));
-  console.log(purple('      ╝╚╝') + dim('  ') + violet('●'));
+  console.log(bright('      ╔╗╔') + dim('  ') + teal('✦'));
+  console.log(teal('      ║║║') + dim('  ') + navy('│'));
+  console.log(navy('      ╝╚╝') + dim('  ') + teal('●'));
   console.log('');
 
   box([
