@@ -1,0 +1,12 @@
+{
+  "name": "wishmikaovindu-stack/nowaikit",
+  "description": "Enable AI-powered automation and integration for ServiceNow using a comprehensive TypeScript toolkit supporting multiple models and protocols.",
+  "accepts": [
+    {
+      "network": "eip155:8453",
+      "asset": "USDC",
+      "address": "YOUR_WALLET_ADDRESS"
+    }
+  ],
+  "resources": []
+}
